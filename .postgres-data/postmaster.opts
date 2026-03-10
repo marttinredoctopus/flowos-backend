@@ -1,1 +1,0 @@
-/Users/appale/flowos/backend/node_modules/@embedded-postgres/darwin-x64/native/bin/postgres "-D" "/Users/appale/flowos/backend/.postgres-data" "-p" "5432"
