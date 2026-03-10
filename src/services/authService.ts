@@ -1,0 +1,163 @@
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { v4 as uuidv4 } from 'uuid';
+import { pool } from '../config/database';
+import { redis } from '../config/redis';
+import { env } from '../config/env';
+import { AppError } from '../middleware/errorHandler';
+
+export interface TokenPair {
+  accessToken: string;
+  refreshToken: string;
+}
+
+export interface AuthUser {
+  id: string;
+  orgId: string;
+  name: string;
+  email: string;
+  role: string;
+}
+
+function generateAccessToken(user: AuthUser): string {
+  return jwt.sign(
+    { id: user.id, orgId: user.orgId, role: user.role },
+    env.JWT_SECRET,
+    { expiresIn: env.JWT_ACCESS_EXPIRES as any }
+  );
+}
+
+function generateRefreshToken(userId: string): string {
+  return jwt.sign({ userId, jti: uuidv4() }, env.JWT_REFRESH_SECRET, {
+    expiresIn: env.JWT_REFRESH_EXPIRES as any,
+  });
+}
+
+async function storeRefreshToken(userId: string, token: string, rememberMe: boolean): Promise<void> {
+  const seconds = rememberMe ? 30 * 24 * 3600 : 7 * 24 * 3600;
+  await redis.setex(`refresh:${userId}:${token}`, seconds, '1');
+}
+
+export async function register(
+  name: string,
+  email: string,
+  password: string,
+  orgName: string
+): Promise<{ tokens: TokenPair; user: AuthUser; org: any }> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Check duplicate email
+    const existing = await client.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existing.rows.length > 0) throw new AppError('Email already registered', 409);
+
+    // Create org
+    const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + uuidv4().slice(0, 6);
+    const orgRes = await client.query(
+      'INSERT INTO organizations (name, slug) VALUES ($1, $2) RETURNING *',
+      [orgName, slug]
+    );
+    const org = orgRes.rows[0];
+
+    // Create user
+    const passwordHash = await bcrypt.hash(password, 12);
+    const userRes = await client.query(
+      `INSERT INTO users (org_id, name, email, password_hash, role)
+       VALUES ($1, $2, $3, $4, 'admin') RETURNING id, org_id, name, email, role`,
+      [org.id, name, email, passwordHash]
+    );
+    const row = userRes.rows[0];
+
+    await client.query('COMMIT');
+
+    const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user.id);
+    await storeRefreshToken(user.id, refreshToken, false);
+
+    return { tokens: { accessToken, refreshToken }, user, org };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function login(
+  email: string,
+  password: string,
+  rememberMe = false
+): Promise<{ tokens: TokenPair; user: AuthUser }> {
+  const res = await pool.query(
+    'SELECT id, org_id, name, email, password_hash, role, is_active FROM users WHERE email = $1',
+    [email]
+  );
+  const row = res.rows[0];
+
+  if (!row || !(await bcrypt.compare(password, row.password_hash))) {
+    throw new AppError('Invalid credentials', 401);
+  }
+  if (!row.is_active) throw new AppError('Account suspended', 403);
+
+  await pool.query('UPDATE users SET last_seen_at = NOW() WHERE id = $1', [row.id]);
+
+  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
+  const accessToken = generateAccessToken(user);
+  const refreshToken = generateRefreshToken(user.id);
+  await storeRefreshToken(user.id, refreshToken, rememberMe);
+
+  return { tokens: { accessToken, refreshToken }, user };
+}
+
+export async function logout(userId: string, refreshToken: string): Promise<void> {
+  await redis.del(`refresh:${userId}:${refreshToken}`);
+}
+
+export async function refreshTokens(oldRefreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+  let payload: any;
+  try {
+    payload = jwt.verify(oldRefreshToken, env.JWT_REFRESH_SECRET);
+  } catch {
+    throw new AppError('Invalid refresh token', 401);
+  }
+
+  const stored = await redis.get(`refresh:${payload.userId}:${oldRefreshToken}`);
+  if (!stored) throw new AppError('Session expired, please log in again', 401);
+
+  // Rotate token
+  await redis.del(`refresh:${payload.userId}:${oldRefreshToken}`);
+
+  const userRes = await pool.query(
+    'SELECT id, org_id, name, email, role FROM users WHERE id = $1',
+    [payload.userId]
+  );
+  const row = userRes.rows[0];
+  if (!row) throw new AppError('User not found', 401);
+
+  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
+  const accessToken = generateAccessToken(user);
+  const newRefreshToken = generateRefreshToken(user.id);
+  await storeRefreshToken(user.id, newRefreshToken, false);
+
+  return { accessToken, refreshToken: newRefreshToken };
+}
+
+export async function forgotPassword(email: string): Promise<string | null> {
+  const res = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+  if (!res.rows[0]) return null; // Always return 200 to caller
+
+  const token = require('crypto').randomBytes(32).toString('hex');
+  await redis.setex(`reset:${token}`, 3600, res.rows[0].id);
+  return token;
+}
+
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  const userId = await redis.get(`reset:${token}`);
+  if (!userId) throw new AppError('Invalid or expired reset token', 400);
+
+  const hash = await bcrypt.hash(newPassword, 12);
+  await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, userId]);
+  await redis.del(`reset:${token}`);
+}
