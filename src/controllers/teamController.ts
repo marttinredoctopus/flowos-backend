@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import bcrypt from 'bcryptjs';
 import { pool } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 
@@ -22,7 +23,6 @@ export async function invite(req: Request, res: Response, next: NextFunction) {
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rows[0]) throw new AppError('User with this email already exists', 409);
     // Create user with temp password
-    const bcrypt = await import('bcrypt');
     const tempPassword = Math.random().toString(36).slice(-10);
     const hash = await bcrypt.hash(tempPassword, 10);
     const result = await pool.query(
