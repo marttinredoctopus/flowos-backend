@@ -1,0 +1,52 @@
+{
+  "name": "flowos-backend",
+  "version": "1.0.0",
+  "description": "FlowOS Backend API",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "dev:api": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "db:migrate": "node -r ts-node/register migrations/001_create_content_tables.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@bull-board/express": "^5.19.0",
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.7.0",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.2.0",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.13",
+    "pg": "^8.11.5",
+    "resend": "^3.2.0",
+    "socket.io": "^4.7.5",
+    "uuid": "^9.0.1",
+    "web-push": "^3.6.7",
+    "winston": "^3.13.0",
+    "zod": "^3.23.4"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.7",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.12.7",
+    "@types/nodemailer": "^6.4.15",
+    "@types/pg": "^8.11.5",
+    "@types/uuid": "^9.0.8",
+    "@types/web-push": "^3.6.3",
+    "embedded-postgres": "^18.3.0-beta.16",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.4.5"
+  }
+}
