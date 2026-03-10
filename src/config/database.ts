@@ -2,14 +2,11 @@ import { Pool } from 'pg';
 import { env } from './env';
 
 export const pool = new Pool({
-  host: env.DB.HOST,
-  port: env.DB.PORT,
-  database: env.DB.NAME,
-  user: env.DB.USER,
-  password: env.DB.PASSWORD,
+  connectionString: env.DATABASE_URL,
+  ssl: env.DATABASE_URL.includes('railway') ? { rejectUnauthorized: false } : false,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 5000,
 });
 
 pool.on('error', (err) => {

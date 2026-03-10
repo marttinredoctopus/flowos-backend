@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { env } from '../config/env';
+import { pool } from '../config/database';
 
 function getFileUrl(req: Request, filePath: string): string {
   const relative = path.relative(path.join(process.cwd(), env.UPLOAD_DIR), filePath);
@@ -14,6 +15,19 @@ function getFileType(mimetype: string): 'image' | 'video' | 'document' {
   return 'document';
 }
 
+export async function listFiles(req: Request, res: Response): Promise<void> {
+  try {
+    const result = await pool.query(
+      `SELECT id, name as filename, size, mime_type, url, project_id, created_at
+       FROM files WHERE org_id = $1 ORDER BY created_at DESC`,
+      [(req as any).user?.orgId]
+    );
+    res.json(result.rows);
+  } catch {
+    res.json([]);
+  }
+}
+
 export async function uploadSingle(req: Request, res: Response): Promise<void> {
   if (!req.file) {
     res.status(400).json({ error: 'No file uploaded' });
@@ -21,14 +35,32 @@ export async function uploadSingle(req: Request, res: Response): Promise<void> {
   }
 
   const url = getFileUrl(req, req.file.path);
-  res.json({
-    url,
-    filename: req.file.filename,
-    originalname: req.file.originalname,
-    mimetype: req.file.mimetype,
-    size: req.file.size,
-    type: getFileType(req.file.mimetype),
-  });
+  const user = (req as any).user;
+  const projectId = req.body.projectId || null;
+
+  try {
+    const dbResult = await pool.query(
+      `INSERT INTO files (org_id, user_id, project_id, name, size, mime_type, url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [user?.orgId, user?.id, projectId, req.file.originalname, req.file.size, req.file.mimetype, url]
+    );
+    res.json({
+      id: dbResult.rows[0]?.id,
+      url,
+      filename: req.file.originalname,
+      mime_type: req.file.mimetype,
+      size: req.file.size,
+      type: getFileType(req.file.mimetype),
+    });
+  } catch {
+    res.json({
+      url,
+      filename: req.file.originalname,
+      mime_type: req.file.mimetype,
+      size: req.file.size,
+      type: getFileType(req.file.mimetype),
+    });
+  }
 }
 
 export async function uploadMultiple(req: Request, res: Response): Promise<void> {

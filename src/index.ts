@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { env } from './config/env';
+import { runMigrations } from './config/migrate';
 import { errorHandler } from './middleware/errorHandler';
 import { initSocket } from './socket';
 import { startEmailWorker } from './workers/emailWorker';
@@ -16,11 +17,22 @@ import authRoutes from './routes/auth';
 import notificationRoutes from './routes/notifications';
 import taskRoutes from './routes/tasks';
 import projectRoutes from './routes/projects';
+import clientRoutes from './routes/clients';
+import teamRoutes from './routes/team';
+import timeEntryRoutes from './routes/timeEntries';
+import campaignRoutes from './routes/campaigns';
+import meetingRoutes from './routes/meetings';
+import shootRoutes from './routes/shoots';
+import ideaRoutes from './routes/ideas';
+import reportRoutes from './routes/reports';
 import contentRoutes from './routes/content';
 import uploadRoutes from './routes/upload';
 
 const app = express();
 const httpServer = http.createServer(app);
+
+// Trust Railway's proxy (required for rate limiting and IP detection)
+app.set('trust proxy', 1);
 
 // Security
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
@@ -46,6 +58,14 @@ app.use('/api/auth', authRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/clients', clientRoutes);
+app.use('/api/team', teamRoutes);
+app.use('/api/time-entries', timeEntryRoutes);
+app.use('/api/campaigns', campaignRoutes);
+app.use('/api/meetings', meetingRoutes);
+app.use('/api/shoots', shootRoutes);
+app.use('/api/ideas', ideaRoutes);
+app.use('/api/reports', reportRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/upload', uploadRoutes);
 
@@ -61,8 +81,14 @@ initSocket(httpServer);
 startEmailWorker();
 
 const PORT = env.PORT;
-httpServer.listen(PORT, () => {
-  console.log(`[FlowOS] Backend running on port ${PORT} (${env.NODE_ENV})`);
-});
+
+// Run DB migrations then start server
+runMigrations()
+  .catch(err => console.error('[Migrations] Error (non-fatal):', err))
+  .finally(() => {
+    httpServer.listen(PORT, () => {
+      console.log(`[FlowOS] Backend running on port ${PORT} (${env.NODE_ENV})`);
+    });
+  });
 
 export default app;
