@@ -22,6 +22,9 @@ import uploadRoutes from './routes/upload';
 const app = express();
 const httpServer = http.createServer(app);
 
+// Trust Railway's proxy (required for rate limiting and IP detection)
+app.set('trust proxy', 1);
+
 // Security
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({
