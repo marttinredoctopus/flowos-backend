@@ -25,8 +25,12 @@ export function startEmailWorker() {
     }
   });
 
-  worker.on('completed', (job) => {
+  worker.on('completed', async (job) => {
     console.log(`[EmailWorker] Sent ${job.data.template} to ${job.data.to}`);
+    await pool.query(
+      "INSERT INTO email_logs (recipient_email, template, status) VALUES ($1, $2, 'sent')",
+      [job.data.to, job.data.template]
+    ).catch(() => {});
   });
 
   return worker;
