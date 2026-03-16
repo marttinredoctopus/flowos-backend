@@ -41,6 +41,7 @@ import webhooksRoutes from './routes/webhooks';
 import publicApiRoutes from './routes/publicApi';
 import orgRoutes from './routes/org';
 import chatRoutes from './routes/chat';
+import dashboardRoutes from './routes/dashboard';
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -104,6 +105,7 @@ app.use('/api/api-keys', apiKeysRoutes);
 app.use('/api/webhooks', webhooksRoutes);
 app.use('/api/org', orgRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 app.use('/v1/public', publicApiRoutes);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', env: env.NODE_ENV, timestamp: new Date().toISOString() }));
