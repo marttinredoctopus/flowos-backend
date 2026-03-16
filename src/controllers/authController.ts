@@ -35,15 +35,12 @@ export async function register(req: Request, res: Response, next: NextFunction) 
   try {
     const data = registerSchema.parse(req.body);
     const result = await authService.register(data.name, data.email, data.password, data.orgName);
-    if (result.tokens.refreshToken) {
-      setCookie(res, result.tokens.refreshToken);
-    }
+    // Return userId only — user must verify email before getting access token
     res.status(201).json({
-      accessToken: result.tokens.accessToken,
-      user: result.user,
-      org: result.org,
+      userId: result.userId,
+      email: data.email,
       emailVerified: false,
-      userId: result.user.id,
+      message: 'Check your email for the verification code',
     });
   } catch (err) {
     next(err);
@@ -59,6 +56,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       return res.status(200).json({
         emailVerified: false,
         userId: result.userId,
+        email: data.email,
         message: 'Please verify your email. A new code has been sent.',
       });
     }

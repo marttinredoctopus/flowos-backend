@@ -60,7 +60,7 @@ export async function register(
   email: string,
   password: string,
   orgName: string
-): Promise<{ tokens: TokenPair; user: AuthUser; org: any }> {
+): Promise<{ userId: string; user: AuthUser; org: any }> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -85,20 +85,18 @@ export async function register(
 
     await client.query('COMMIT');
 
-    const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
-    const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user.id);
-    await storeRefreshToken(user.id, refreshToken, false);
-
-    // Send welcome email + OTP verification
+    // Generate OTP and store in Redis (15 min TTL)
     const otp = generateOTP();
-    await setEx(`verify:${user.id}`, 900, otp); // 15 min TTL
+    await setEx(`verify:${row.id}`, 900, otp);
+    console.log(`[Auth] OTP generated for ${email}: ${otp}`);
 
-    // Fire and forget — don't block registration on email
-    queueEmail({ template: 'welcome', to: email, data: { name, orgName } }).catch(() => {});
-    queueEmail({ template: 'email_verification', to: email, data: { name, otp } }).catch(() => {});
+    // Queue verification email (non-blocking)
+    queueEmail({ template: 'email_verification', to: email, data: { name, otp } }).catch((e: any) => {
+      console.error('[Auth] Failed to queue verification email:', e.message);
+    });
 
-    return { tokens: { accessToken, refreshToken }, user, org };
+    const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
+    return { userId: row.id, user, org };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -126,6 +124,9 @@ export async function verifyEmail(userId: string, otp: string): Promise<{ tokens
   const refreshToken = generateRefreshToken(user.id);
   await storeRefreshToken(user.id, refreshToken, false);
 
+  // Send welcome email after verification
+  queueEmail({ template: 'welcome', to: user.email, data: { name: user.name, orgName: '' } }).catch(() => {});
+
   return { tokens: { accessToken, refreshToken }, user };
 }
 
@@ -140,6 +141,7 @@ export async function resendVerification(userId: string): Promise<void> {
 
   const otp = generateOTP();
   await setEx(`verify:${userId}`, 900, otp);
+  console.log(`[Auth] Resend OTP for ${row.email}: ${otp}`);
   await queueEmail({ template: 'email_verification', to: row.email, data: { name: row.name, otp } });
 }
 
@@ -159,11 +161,10 @@ export async function login(
   }
   if (!row.is_active) throw new AppError('Account suspended', 403);
 
-  // If email not verified, return userId so frontend can show OTP screen
   if (!row.email_verified) {
-    // Re-send OTP
     const otp = generateOTP();
     await setEx(`verify:${row.id}`, 900, otp);
+    console.log(`[Auth] Login OTP for ${email}: ${otp}`);
     queueEmail({ template: 'email_verification', to: row.email, data: { name: row.name, otp } }).catch(() => {});
     return {
       tokens: { accessToken: '', refreshToken: '' },
@@ -227,11 +228,11 @@ export async function forgotPassword(email: string): Promise<void> {
     'SELECT id, name FROM users WHERE email = $1',
     [email]
   );
-  if (!res.rows[0]) return; // Always return 200
+  if (!res.rows[0]) return;
 
   const { id: userId, name } = res.rows[0];
   const otp = generateOTP();
-  await setEx(`reset:${userId}`, 3600, otp); // 1 hour TTL
+  await setEx(`reset:${userId}`, 3600, otp);
 
   await queueEmail({ template: 'password_reset_otp', to: email, data: { name, otp } });
 }
@@ -244,7 +245,6 @@ export async function verifyResetOtp(email: string, otp: string): Promise<string
   const stored = await get(`reset:${userId}`);
   if (!stored || stored !== otp) throw new AppError('Invalid or expired code', 400);
 
-  // Generate a temp token (store in Redis for 10 minutes)
   const tempToken = crypto.randomBytes(32).toString('hex');
   await setEx(`resettoken:${tempToken}`, 600, userId);
   await del(`reset:${userId}`);
