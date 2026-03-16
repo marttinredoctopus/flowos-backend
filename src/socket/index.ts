@@ -3,6 +3,7 @@ import { Server as SocketServer } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { setSocketServer } from '../services/notificationService';
+import { pool } from '../config/database';
 
 export function initSocket(httpServer: HttpServer) {
   const io = new SocketServer(httpServer, {
@@ -31,12 +32,23 @@ export function initSocket(httpServer: HttpServer) {
     socket.on('join_room', (room: string) => socket.join(room));
     socket.on('leave_room', (room: string) => socket.leave(room));
 
-    socket.on('chat_message', (data: { channelId: string; body: string }) => {
-      io.to(`channel:${data.channelId}`).emit('chat:message', {
-        ...data,
-        userId: user.id,
-        createdAt: new Date().toISOString(),
-      });
+    socket.on('chat_message', async (data: { channelId: string; body: string }) => {
+      try {
+        const result = await pool.query(
+          'INSERT INTO chat_messages (org_id, user_id, body) VALUES ($1, $2, $3) RETURNING id, created_at',
+          [user.orgId, user.id, data.body]
+        );
+        const msg = {
+          id: result.rows[0].id,
+          body: data.body,
+          user_id: user.id,
+          user_name: user.name,
+          created_at: result.rows[0].created_at,
+        };
+        io.to(`channel:${data.channelId}`).emit('chat:message', msg);
+      } catch (err) {
+        console.error('[Socket] chat_message persist error:', err);
+      }
     });
 
     socket.on('typing_start', (data: { channelId: string }) => {

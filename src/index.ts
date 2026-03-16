@@ -40,6 +40,7 @@ import apiKeysRoutes from './routes/apiKeys';
 import webhooksRoutes from './routes/webhooks';
 import publicApiRoutes from './routes/publicApi';
 import orgRoutes from './routes/org';
+import chatRoutes from './routes/chat';
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -48,9 +49,22 @@ app.set('trust proxy', 1);
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({
-  origin: env.FRONTEND_URL,
+  origin: (origin, callback) => {
+    const allowed = [
+      env.FRONTEND_URL,
+      'http://localhost:3000',
+      'http://localhost:3001',
+    ].filter(Boolean);
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin || allowed.some(o => origin.startsWith(o))) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: ${origin} not allowed`));
+    }
+  },
   credentials: true,
-  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
@@ -89,9 +103,11 @@ app.use('/api/invoices', invoicesRoutes);
 app.use('/api/api-keys', apiKeysRoutes);
 app.use('/api/webhooks', webhooksRoutes);
 app.use('/api/org', orgRoutes);
+app.use('/api/chat', chatRoutes);
 app.use('/v1/public', publicApiRoutes);
 
-app.get('/health', (_req, res) => res.json({ status: 'ok', env: env.NODE_ENV }));
+app.get('/health', (_req, res) => res.json({ status: 'ok', env: env.NODE_ENV, timestamp: new Date().toISOString() }));
+app.get('/api/health', (_req, res) => res.json({ status: 'ok', env: env.NODE_ENV, timestamp: new Date().toISOString() }));
 
 app.use(errorHandler);
 
