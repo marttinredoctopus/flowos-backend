@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { pool } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { triggerTaskAssigned, triggerCommentAdded } from '../services/notificationService';
-import { queueEmail } from '../services/emailService';
+import { queueEmail, sendTaskAssignedEmail } from '../services/emailService';
 import { env } from '../config/env';
 
 async function getTaskAssignees(taskId: string) {

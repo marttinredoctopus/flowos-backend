@@ -163,6 +163,29 @@ export function buildTemplate(job: EmailJob): { subject: string; html: string } 
   }
 }
 
+// Helper: send task-assigned email (for task controllers)
+export async function sendTaskAssignedEmail(assigneeId: string, task: { id: string; title: string; priority: string; due_date?: string | null; project?: { name: string } | null }): Promise<void> {
+  try {
+    const res = await pool.query('SELECT name, email FROM users WHERE id=$1', [assigneeId]);
+    const assignee = res.rows[0];
+    if (!assignee?.email) return;
+    await queueEmail({
+      template: 'task_assigned',
+      to: assignee.email,
+      data: {
+        name: assignee.name,
+        taskTitle: task.title,
+        projectName: task.project?.name || '',
+        priority: task.priority,
+        dueDate: task.due_date ? new Date(task.due_date).toLocaleDateString('en', { month: 'long', day: 'numeric', year: 'numeric' }) : undefined,
+        taskUrl: `${process.env.FRONTEND_URL}/dashboard/tasks`,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Email] sendTaskAssignedEmail error:', err.message);
+  }
+}
+
 export async function sendEmail(job: EmailJob) {
   const { subject, html } = buildTemplate(job);
   const recipient = resolveRecipient(job.to);
