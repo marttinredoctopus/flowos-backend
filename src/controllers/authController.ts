@@ -42,8 +42,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
       accessToken: result.tokens.accessToken,
       user: result.user,
       org: result.org,
-      emailVerified: false,
-      userId: result.user.id,
+      emailVerified: true,
     });
   } catch (err) {
     next(err);

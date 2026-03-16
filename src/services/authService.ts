@@ -78,7 +78,7 @@ export async function register(
     const passwordHash = await bcrypt.hash(password, 12);
     const userRes = await client.query(
       `INSERT INTO users (org_id, name, email, password_hash, role, email_verified)
-       VALUES ($1, $2, $3, $4, 'admin', FALSE) RETURNING id, org_id, name, email, role`,
+       VALUES ($1, $2, $3, $4, 'admin', TRUE) RETURNING id, org_id, name, email, role`,
       [org.id, name, email, passwordHash]
     );
     const row = userRes.rows[0];
@@ -90,13 +90,8 @@ export async function register(
     const refreshToken = generateRefreshToken(user.id);
     await storeRefreshToken(user.id, refreshToken, false);
 
-    // Send welcome email + OTP verification
-    const otp = generateOTP();
-    await setEx(`verify:${user.id}`, 900, otp); // 15 min TTL
-
-    // Fire and forget — don't block registration on email
+    // Fire and forget welcome email (don't block registration)
     queueEmail({ template: 'welcome', to: email, data: { name, orgName } }).catch(() => {});
-    queueEmail({ template: 'email_verification', to: email, data: { name, otp } }).catch(() => {});
 
     return { tokens: { accessToken, refreshToken }, user, org };
   } catch (err) {
