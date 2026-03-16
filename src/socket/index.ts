@@ -6,20 +6,44 @@ import { setSocketServer } from '../services/notificationService';
 import { pool } from '../config/database';
 
 export function initSocket(httpServer: HttpServer) {
+  const allowedOrigins = [
+    env.FRONTEND_URL,
+    'http://localhost:3000',
+    'http://localhost:3001',
+  ].filter(Boolean);
+
   const io = new SocketServer(httpServer, {
-    cors: { origin: env.FRONTEND_URL, credentials: true },
+    cors: {
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.railway.app')) {
+          callback(null, true);
+        } else {
+          callback(new Error('CORS not allowed'));
+        }
+      },
+      credentials: true,
+    },
     transports: ['websocket', 'polling'],
   });
 
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
-    if (!token) return next(new Error('Unauthorized'));
+    if (!token) {
+      return next(new Error('Unauthorized'));
+    }
     try {
       const payload = jwt.verify(token, env.JWT_SECRET) as any;
-      (socket as any).user = payload;
+      // JWT payload uses 'id' (not 'userId') — normalize here
+      (socket as any).user = {
+        id:           payload.id || payload.userId,
+        orgId:        payload.orgId,
+        role:         payload.role,
+        isSuperAdmin: payload.isSuperAdmin || false,
+      };
       next();
-    } catch {
-      next(new Error('Invalid token'));
+    } catch (err: any) {
+      console.log('[Socket] Auth failed:', err.message);
+      return next(new Error('jwt expired'));
     }
   });
 
