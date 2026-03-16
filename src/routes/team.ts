@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
+import { checkPlanLimit } from '../middleware/planLimits';
 import * as ctrl from '../controllers/teamController';
 
 const router = Router();
 router.use(authenticate);
 
 router.get('/', ctrl.list);
-router.post('/invite', ctrl.invite);
+router.post('/invite', checkPlanLimit('team_members'), ctrl.invite);
 router.patch('/:id', ctrl.updateMember);
 router.delete('/:id', ctrl.removeMember);
 

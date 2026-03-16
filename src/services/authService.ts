@@ -19,11 +19,12 @@ export interface AuthUser {
   name: string;
   email: string;
   role: string;
+  isSuperAdmin?: boolean;
 }
 
 function generateAccessToken(user: AuthUser): string {
   return jwt.sign(
-    { id: user.id, orgId: user.orgId, role: user.role },
+    { id: user.id, orgId: user.orgId, role: user.role, isSuperAdmin: user.isSuperAdmin || false },
     env.JWT_SECRET,
     { expiresIn: env.JWT_ACCESS_EXPIRES as any }
   );
@@ -113,13 +114,13 @@ export async function verifyEmail(userId: string, otp: string): Promise<{ tokens
   await pool.query('UPDATE users SET email_verified = TRUE WHERE id = $1', [userId]);
 
   const res = await pool.query(
-    'SELECT id, org_id, name, email, role FROM users WHERE id = $1',
+    'SELECT id, org_id, name, email, role, is_super_admin FROM users WHERE id = $1',
     [userId]
   );
   const row = res.rows[0];
   if (!row) throw new AppError('User not found', 404);
 
-  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
+  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role, isSuperAdmin: row.is_super_admin };
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user.id);
   await storeRefreshToken(user.id, refreshToken, false);
@@ -151,7 +152,7 @@ export async function login(
   rememberMe = false
 ): Promise<{ tokens: TokenPair; user: AuthUser; emailVerified: boolean; userId?: string }> {
   const res = await pool.query(
-    'SELECT id, org_id, name, email, password_hash, role, is_active, email_verified FROM users WHERE email = $1',
+    'SELECT id, org_id, name, email, password_hash, role, is_active, email_verified, is_super_admin FROM users WHERE email = $1',
     [email]
   );
   const row = res.rows[0];
@@ -176,7 +177,7 @@ export async function login(
 
   await pool.query('UPDATE users SET last_seen_at = NOW() WHERE id = $1', [row.id]);
 
-  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
+  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role, isSuperAdmin: row.is_super_admin };
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user.id);
   await storeRefreshToken(user.id, refreshToken, rememberMe);
@@ -209,13 +210,13 @@ export async function refreshTokens(oldRefreshToken: string): Promise<{ accessTo
   await pool.query('DELETE FROM refresh_tokens WHERE token = $1', [oldRefreshToken]);
 
   const userRes = await pool.query(
-    'SELECT id, org_id, name, email, role FROM users WHERE id = $1',
+    'SELECT id, org_id, name, email, role, is_super_admin FROM users WHERE id = $1',
     [payload.userId]
   );
   const row = userRes.rows[0];
   if (!row) throw new AppError('User not found', 401);
 
-  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
+  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role, isSuperAdmin: row.is_super_admin };
   const accessToken = generateAccessToken(user);
   const newRefreshToken = generateRefreshToken(user.id);
   await storeRefreshToken(user.id, newRefreshToken, false);

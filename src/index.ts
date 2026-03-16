@@ -42,6 +42,8 @@ import publicApiRoutes from './routes/publicApi';
 import orgRoutes from './routes/org';
 import chatRoutes from './routes/chat';
 import dashboardRoutes from './routes/dashboard';
+import billingRoutes from './routes/billing';
+import adminRoutes from './routes/admin';
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -106,6 +108,8 @@ app.use('/api/webhooks', webhooksRoutes);
 app.use('/api/org', orgRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/billing', billingRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/v1/public', publicApiRoutes);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', env: env.NODE_ENV, timestamp: new Date().toISOString() }));
