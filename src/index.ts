@@ -40,6 +40,10 @@ import apiKeysRoutes from './routes/apiKeys';
 import webhooksRoutes from './routes/webhooks';
 import publicApiRoutes from './routes/publicApi';
 import orgRoutes from './routes/org';
+import chatRoutes from './routes/chat';
+import dashboardRoutes from './routes/dashboard';
+import billingRoutes from './routes/billing';
+import adminRoutes from './routes/admin';
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -51,11 +55,13 @@ app.use(cors({
   origin: (origin, callback) => {
     const allowed = [
       env.FRONTEND_URL,
+      'https://tasksdone.cloud',
+      'https://www.tasksdone.cloud',
       'http://localhost:3000',
       'http://localhost:3001',
     ].filter(Boolean);
-    // Allow requests with no origin (mobile apps, curl, Postman)
-    if (!origin || allowed.some(o => origin.startsWith(o))) {
+    // Allow requests with no origin (mobile apps, curl, Postman) + Railway/tasksdone subdomains
+    if (!origin || allowed.some(o => origin.startsWith(o)) || origin.endsWith('.railway.app') || origin.endsWith('.tasksdone.cloud')) {
       callback(null, true);
     } else {
       callback(new Error(`CORS: ${origin} not allowed`));
@@ -102,6 +108,10 @@ app.use('/api/invoices', invoicesRoutes);
 app.use('/api/api-keys', apiKeysRoutes);
 app.use('/api/webhooks', webhooksRoutes);
 app.use('/api/org', orgRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/billing', billingRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/v1/public', publicApiRoutes);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', env: env.NODE_ENV, timestamp: new Date().toISOString() }));
