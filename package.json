@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@aws-sdk/client-s3": "^3.1010.0",
+    "@aws-sdk/s3-request-presigner": "^3.1010.0",
     "@bull-board/express": "^5.19.0",
     "@google/generative-ai": "^0.24.1",
     "bcryptjs": "^2.4.3",
