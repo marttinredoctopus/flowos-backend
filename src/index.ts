@@ -58,8 +58,8 @@ app.use(cors({
       'http://localhost:3000',
       'http://localhost:3001',
     ].filter(Boolean);
-    // Allow requests with no origin (mobile apps, curl, Postman)
-    if (!origin || allowed.some(o => origin.startsWith(o))) {
+    // Allow requests with no origin (mobile apps, curl, Postman) + Railway subdomains
+    if (!origin || allowed.some(o => origin.startsWith(o)) || origin.endsWith('.railway.app')) {
       callback(null, true);
     } else {
       callback(new Error(`CORS: ${origin} not allowed`));
