@@ -19,6 +19,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     const { projectId, status, assigneeId } = req.query;
     let q = `SELECT t.*, u.name as assignee_name, u.avatar_url as assignee_avatar,
                     r.name as reporter_name,
+                    p.name as project_name,
                     COALESCE(
                       (SELECT json_agg(json_build_object('id', u2.id, 'name', u2.name, 'avatar_url', u2.avatar_url))
                        FROM task_assignees ta JOIN users u2 ON u2.id = ta.user_id WHERE ta.task_id = t.id),
@@ -27,6 +28,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
              FROM tasks t
              LEFT JOIN users u ON u.id = t.assignee_id
              LEFT JOIN users r ON r.id = t.reporter_id
+             LEFT JOIN projects p ON p.id = t.project_id
              WHERE t.org_id = $1`;
     const params: any[] = [req.user!.orgId];
     if (projectId) { params.push(projectId); q += ` AND t.project_id = $${params.length}`; }
@@ -128,30 +130,54 @@ export async function getOne(req: Request, res: Response, next: NextFunction) {
 
 export async function update(req: Request, res: Response, next: NextFunction) {
   try {
-    const { title, description, status, priority, assigneeId, assigneeIds, dueDate,
-            estimatedHours, tags, position, link } = req.body;
+    const { title, description, status, priority, assigneeId, assigneeIds,
+            dueDate, due_date, estimatedHours, tags, tag, position, link, project_id } = req.body;
     const prev = await pool.query('SELECT * FROM tasks WHERE id = $1 AND org_id = $2', [req.params.id, req.user!.orgId]);
     if (!prev.rows[0]) throw new AppError('Task not found', 404);
 
+    // Build SET clause dynamically so explicit null values clear the field
+    const sets: string[] = ['updated_at = NOW()'];
+    const vals: any[] = [];
+    let n = 1;
+    function addField(col: string, val: any) {
+      if (val !== undefined) { sets.push(`${col} = $${n++}`); vals.push(val === '' ? null : val); }
+    }
+    addField('title',           title);
+    addField('description',     description);
+    addField('status',          status);
+    addField('priority',        priority);
+    addField('due_date',        due_date !== undefined ? due_date : dueDate);
+    addField('estimated_hours', estimatedHours);
+    addField('tags',            tags);
+    addField('tag',             tag);
+    addField('position',        position);
+    addField('link',            link);
+    addField('project_id',      project_id);
+    if (assigneeId !== undefined) { sets.push(`assignee_id = $${n++}`); vals.push(assigneeId || null); }
+
+    vals.push(req.params.id, req.user!.orgId);
     const result = await pool.query(
-      `UPDATE tasks SET
-        title = COALESCE($1, title), description = COALESCE($2, description),
-        status = COALESCE($3, status), priority = COALESCE($4, priority),
-        assignee_id = COALESCE($5, assignee_id), due_date = COALESCE($6, due_date),
-        estimated_hours = COALESCE($7, estimated_hours), tags = COALESCE($8, tags),
-        position = COALESCE($9, position), link = COALESCE($10, link), updated_at = NOW()
-       WHERE id = $11 AND org_id = $12 RETURNING *`,
-      [title, description, status, priority, assigneeId, dueDate, estimatedHours,
-       tags, position, link, req.params.id, req.user!.orgId]
+      `UPDATE tasks SET ${sets.join(', ')} WHERE id = $${n++} AND org_id = $${n++} RETURNING *`,
+      vals
     );
     const task = result.rows[0];
+    if (!task) throw new AppError('Task not found', 404);
 
+    // Sync task_assignees table
     if (assigneeIds !== undefined) {
       await pool.query('DELETE FROM task_assignees WHERE task_id = $1', [task.id]);
       for (const uid of assigneeIds) {
         await pool.query(
           'INSERT INTO task_assignees (task_id, user_id, assigned_by) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
           [task.id, uid, req.user!.id]
+        );
+      }
+    } else if (assigneeId !== undefined) {
+      await pool.query('DELETE FROM task_assignees WHERE task_id = $1', [task.id]);
+      if (assigneeId) {
+        await pool.query(
+          'INSERT INTO task_assignees (task_id, user_id, assigned_by) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+          [task.id, assigneeId, req.user!.id]
         );
       }
     }
@@ -192,17 +218,25 @@ export async function remove(req: Request, res: Response, next: NextFunction) {
 
 export async function addComment(req: Request, res: Response, next: NextFunction) {
   try {
-    const { body } = req.body;
-    if (!body) throw new AppError('Comment body required', 400);
+    const { body: bodyField, text, mentions = [] } = req.body;
+    const body = text || bodyField;
+    if (!body?.trim()) throw new AppError('Comment body required', 400);
     const taskRes = await pool.query('SELECT * FROM tasks WHERE id = $1 AND org_id = $2', [req.params.id, req.user!.orgId]);
     if (!taskRes.rows[0]) throw new AppError('Task not found', 404);
     const task = taskRes.rows[0];
 
     const result = await pool.query(
-      'INSERT INTO comments (task_id, user_id, body) VALUES ($1,$2,$3) RETURNING *',
-      [req.params.id, req.user!.id, body]
+      'INSERT INTO comments (task_id, user_id, body, mentions) VALUES ($1,$2,$3,$4) RETURNING *',
+      [req.params.id, req.user!.id, body.trim(), JSON.stringify(mentions)]
     );
     const comment = result.rows[0];
+
+    // Send mention notifications
+    for (const mentionedId of mentions) {
+      if (mentionedId !== req.user!.id) {
+        await triggerCommentAdded(comment, task, req.user!.id).catch(() => {});
+      }
+    }
 
     const actorRow = await pool.query('SELECT name FROM users WHERE id = $1', [req.user!.id]);
     const actorName = actorRow.rows[0]?.name || 'Someone';
@@ -234,7 +268,9 @@ export async function addComment(req: Request, res: Response, next: NextFunction
     }
 
     const fullComment = await pool.query(
-      'SELECT c.*, u.name, u.avatar_url FROM comments c JOIN users u ON u.id = c.user_id WHERE c.id = $1',
+      `SELECT c.*, u.name, u.avatar_url,
+              json_build_object('id', u.id, 'name', u.name, 'avatar_url', u.avatar_url) as user
+       FROM comments c JOIN users u ON u.id = c.user_id WHERE c.id = $1`,
       [comment.id]
     );
     res.status(201).json(fullComment.rows[0]);
@@ -244,7 +280,9 @@ export async function addComment(req: Request, res: Response, next: NextFunction
 export async function getComments(req: Request, res: Response, next: NextFunction) {
   try {
     const result = await pool.query(
-      `SELECT c.*, u.name, u.avatar_url FROM comments c
+      `SELECT c.*, u.name, u.avatar_url,
+              json_build_object('id', u.id, 'name', u.name, 'avatar_url', u.avatar_url) as user
+       FROM comments c
        JOIN users u ON u.id = c.user_id
        WHERE c.task_id = $1 ORDER BY c.created_at ASC`,
       [req.params.id]
