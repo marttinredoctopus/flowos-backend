@@ -82,7 +82,7 @@ export async function listAssets(req: Request, res: Response, next: NextFunction
 
 export async function uploadAsset(req: Request, res: Response, next: NextFunction) {
   try {
-    const { briefId, projectId, clientId, name, fileUrl, fileType } = req.body;
+    const { briefId, projectId, clientId, name, fileUrl, fileType, r2Key, mimeType, sizeBytes } = req.body;
     if (!name || !fileUrl) throw new AppError('name and fileUrl required', 400);
 
     // Auto-increment version for same name + brief
@@ -101,10 +101,13 @@ export async function uploadAsset(req: Request, res: Response, next: NextFunctio
     }
 
     const row = await pool.query(
-      `INSERT INTO design_assets (org_id, brief_id, project_id, client_id, name, file_url, file_type, version, uploaded_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      `INSERT INTO design_assets
+         (org_id, brief_id, project_id, client_id, name, file_url, file_type,
+          version, uploaded_by, r2_key, mime_type, size_bytes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
       [req.user!.orgId, briefId || null, projectId || null, clientId || null,
-       name, fileUrl, fileType || 'image', version, req.user!.id]
+       name, fileUrl, fileType || 'image', version, req.user!.id,
+       r2Key || null, mimeType || null, sizeBytes || 0]
     );
     res.status(201).json(row.rows[0]);
   } catch (err) { next(err); }
