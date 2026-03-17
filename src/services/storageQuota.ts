@@ -2,16 +2,20 @@ import { pool } from '../config/database';
 
 // Storage limits per plan in bytes
 export const PLAN_STORAGE: Record<string, number> = {
-  free:   1   * 1024 * 1024 * 1024,  // 1 GB
-  pro:    20  * 1024 * 1024 * 1024,  // 20 GB
-  agency: 100 * 1024 * 1024 * 1024,  // 100 GB
+  free:       1   * 1024 * 1024 * 1024,  // 1 GB
+  starter:    5   * 1024 * 1024 * 1024,  // 5 GB (matches plans.ts)
+  pro:        100 * 1024 * 1024 * 1024,  // 100 GB
+  enterprise: -1,                         // unlimited (checked separately)
+  agency:     100 * 1024 * 1024 * 1024,  // 100 GB legacy alias
 };
 
 // Max file size per plan
 export const PLAN_FILE_SIZE: Record<string, number> = {
-  free:   10  * 1024 * 1024,  // 10 MB
-  pro:    100 * 1024 * 1024,  // 100 MB
-  agency: 500 * 1024 * 1024,  // 500 MB
+  free:       10  * 1024 * 1024,  // 10 MB
+  starter:    50  * 1024 * 1024,  // 50 MB
+  pro:        500 * 1024 * 1024,  // 500 MB
+  enterprise: 500 * 1024 * 1024,  // 500 MB
+  agency:     500 * 1024 * 1024,  // 500 MB legacy alias
 };
 
 export function formatBytes(bytes: number): string {
@@ -33,14 +37,17 @@ export async function checkQuota(
 
   const org   = rows[0];
   const plan  = org?.plan || 'free';
-  const limit = PLAN_STORAGE[plan] || PLAN_STORAGE.free;
+  const limit = PLAN_STORAGE[plan] ?? PLAN_STORAGE.free;
   const used  = Number(org?.storage_used_bytes || 0);
 
+  // -1 means unlimited (enterprise)
+  const unlimited = limit === -1;
+
   return {
-    allowed:   (used + newFileSize) <= limit,
+    allowed:   unlimited || (used + newFileSize) <= limit,
     used,
-    limit,
-    remaining: Math.max(0, limit - used),
+    limit:     unlimited ? Number.MAX_SAFE_INTEGER : limit,
+    remaining: unlimited ? Number.MAX_SAFE_INTEGER : Math.max(0, limit - used),
     plan,
   };
 }
