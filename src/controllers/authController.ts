@@ -25,7 +25,7 @@ function setCookie(res: Response, token: string, rememberMe = false) {
   res.cookie('refresh_token', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: (rememberMe ? 30 : 7) * 24 * 60 * 60 * 1000,
     path: '/api/auth',
   });
@@ -58,6 +58,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       return res.status(200).json({
         emailVerified: false,
         userId: result.userId,
+        email: data.email,
         message: 'Please verify your email. A new code has been sent.',
       });
     }

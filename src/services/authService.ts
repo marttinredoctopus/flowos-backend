@@ -61,7 +61,7 @@ export async function register(
   email: string,
   password: string,
   orgName: string
-): Promise<{ userId: string; user: AuthUser; org: any }> {
+): Promise<{ userId: string; user: AuthUser; org: any; tokens: TokenPair }> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -87,7 +87,10 @@ export async function register(
     await client.query('COMMIT');
 
     const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
-    return { userId: row.id, user, org };
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user.id);
+    await storeRefreshToken(user.id, refreshToken, false);
+    return { userId: row.id, user, org, tokens: { accessToken, refreshToken } };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
