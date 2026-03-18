@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { pool } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { queueEmail } from '../services/emailService';
+import { fireAutomations } from '../services/automationService';
 
 async function getNextInvoiceNumber(orgId: string): Promise<string> {
   const year = new Date().getFullYear();
@@ -85,6 +86,9 @@ export async function create(req: Request, res: Response, next: NextFunction) {
       }
     } catch {}
 
+    // Fire automation
+    fireAutomations({ event: 'invoice_created', orgId: req.user!.orgId, actorId: req.user!.id, data: invoice }).catch(() => {});
+
     res.status(201).json(invoice);
   } catch (err) { next(err); }
 }
@@ -165,6 +169,9 @@ export async function markPaid(req: Request, res: Response, next: NextFunction) 
         }).catch(() => {});
       }
     } catch {}
+
+    // Fire automation
+    fireAutomations({ event: 'invoice_paid', orgId: req.user!.orgId, actorId: req.user!.id, data: inv.rows[0] }).catch(() => {});
 
     res.json({ success: true, payment: payment.rows[0] });
   } catch (err) { next(err); }

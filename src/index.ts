@@ -44,6 +44,9 @@ import chatRoutes from './routes/chat';
 import dashboardRoutes from './routes/dashboard';
 import billingRoutes from './routes/billing';
 import adminRoutes from './routes/admin';
+import automationsRoutes from './routes/automations';
+import templatesRoutes from './routes/templates';
+import clientPortalRoutes from './routes/clientPortal';
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -110,6 +113,9 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/automations', automationsRoutes);
+app.use('/api/templates', templatesRoutes);
+app.use('/api/client-portal', clientPortalRoutes);
 app.use('/v1/public', publicApiRoutes);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', env: env.NODE_ENV, timestamp: new Date().toISOString() }));

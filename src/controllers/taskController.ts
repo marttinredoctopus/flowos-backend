@@ -3,6 +3,7 @@ import { pool } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { triggerTaskAssigned, triggerCommentAdded } from '../services/notificationService';
 import { queueEmail, sendTaskAssignedEmail } from '../services/emailService';
+import { fireAutomations } from '../services/automationService';
 import { env } from '../config/env';
 
 async function getTaskAssignees(taskId: string) {
@@ -99,6 +100,9 @@ export async function create(req: Request, res: Response, next: NextFunction) {
         }
       }
     }
+
+    // Fire task_created automations
+    fireAutomations({ event: 'task_created', orgId: req.user!.orgId, actorId: req.user!.id, data: task }).catch(() => {});
 
     const assignees = await getTaskAssignees(task.id);
     res.status(201).json({ ...task, assignees });
@@ -202,6 +206,11 @@ export async function update(req: Request, res: Response, next: NextFunction) {
           },
         }).catch(() => {});
       }
+    }
+
+    // Fire automation events
+    if (status && status !== prev.rows[0].status) {
+      fireAutomations({ event: 'task_completed', orgId: req.user!.orgId, actorId: req.user!.id, data: task }).catch(() => {});
     }
 
     // Email reporter/creator when task is marked done
