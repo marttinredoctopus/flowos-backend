@@ -52,19 +52,17 @@ app.set('trust proxy', 1);
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({
-  origin: (origin, callback) => {
+  origin: function(origin, callback) {
     const allowed = [
-      env.FRONTEND_URL,
       'https://tasksdone.cloud',
       'https://www.tasksdone.cloud',
       'http://localhost:3000',
       'http://localhost:3001',
-    ].filter(Boolean);
-    // Allow requests with no origin (mobile apps, curl, Postman) + Railway/tasksdone subdomains
-    if (!origin || allowed.some(o => origin.startsWith(o)) || origin.endsWith('.railway.app') || origin.endsWith('.tasksdone.cloud')) {
+    ];
+    if (!origin || allowed.includes(origin) || origin.endsWith('.tasksdone.cloud') || origin.endsWith('.railway.app')) {
       callback(null, true);
     } else {
-      callback(new Error(`CORS: ${origin} not allowed`));
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
