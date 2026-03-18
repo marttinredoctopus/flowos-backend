@@ -19,10 +19,10 @@ const upload = multer({
 
 // ── POST /api/upload/single ─────────────────────────────────────────────────
 // Primary upload endpoint (backwards-compatible with existing pages)
-router.post('/single', upload.single('file'), async (req: any, res) => {
+router.post('/single', upload.single('file'), async (req: any, res): Promise<void> => {
   try {
     const file = req.file;
-    if (!file) return res.status(400).json({ error: 'No file provided' });
+    if (!file) { res.status(400).json({ error: 'No file provided' }); return; }
 
     const folder      = req.body.folder      || 'files';
     const entityType  = req.body.entityType  || req.body.entity_type  || null;
@@ -34,19 +34,19 @@ router.post('/single', upload.single('file'), async (req: any, res) => {
     const maxSize = PLAN_FILE_SIZE[quota.plan] || PLAN_FILE_SIZE.free;
 
     if (file.size > maxSize) {
-      return res.status(403).json({
+      res.status(403).json({
         error: `Your ${quota.plan} plan allows files up to ${formatBytes(maxSize)}. This file is ${formatBytes(file.size)}.`,
         code: 'FILE_TOO_LARGE',
         upgrade_url: '/dashboard/settings',
-      });
+      }); return;
     }
 
     if (!quota.allowed) {
-      return res.status(403).json({
+      res.status(403).json({
         error: `Storage full. You have ${formatBytes(quota.remaining)} remaining of your ${formatBytes(quota.limit)} limit.`,
         code: 'STORAGE_QUOTA_EXCEEDED',
         upgrade_url: '/dashboard/settings',
-      });
+      }); return;
     }
 
     // Upload to R2
@@ -85,10 +85,10 @@ router.post('/single', upload.single('file'), async (req: any, res) => {
 });
 
 // ── POST /api/upload/multiple ───────────────────────────────────────────────
-router.post('/multiple', upload.array('files', 20), async (req: any, res) => {
+router.post('/multiple', upload.array('files', 20), async (req: any, res): Promise<void> => {
   try {
     const files = req.files as Express.Multer.File[];
-    if (!files?.length) return res.status(400).json({ error: 'No files provided' });
+    if (!files?.length) { res.status(400).json({ error: 'No files provided' }); return; }
 
     const folder = req.body.folder || 'files';
     const orgId  = req.user.orgId;
@@ -123,16 +123,16 @@ router.post('/multiple', upload.array('files', 20), async (req: any, res) => {
 
 // ── DELETE /api/upload ──────────────────────────────────────────────────────
 // Delete by R2 key
-router.delete('/', async (req: any, res) => {
+router.delete('/', async (req: any, res): Promise<void> => {
   try {
     const key = req.body.key;
-    if (!key) return res.status(400).json({ error: 'key is required' });
+    if (!key) { res.status(400).json({ error: 'key is required' }); return; }
 
     const { rows } = await pool.query(
       'SELECT * FROM org_files WHERE r2_key = $1 AND org_id = $2',
       [key, req.user.orgId]
     );
-    if (!rows[0]) return res.status(404).json({ error: 'File not found' });
+    if (!rows[0]) { res.status(404).json({ error: 'File not found' }); return; }
 
     await deleteFromR2(key);
     await pool.query('DELETE FROM org_files WHERE r2_key = $1', [key]);
@@ -147,7 +147,7 @@ router.delete('/', async (req: any, res) => {
 
 // ── DELETE /api/upload/:filename ────────────────────────────────────────────
 // Legacy endpoint — try to match by filename in org_files, or try R2 key directly
-router.delete('/:filename', async (req: any, res) => {
+router.delete('/:filename', async (req: any, res): Promise<void> => {
   try {
     const { filename } = req.params;
     const { rows } = await pool.query(
@@ -159,7 +159,7 @@ router.delete('/:filename', async (req: any, res) => {
       await deleteFromR2(rows[0].r2_key);
       await pool.query('DELETE FROM org_files WHERE id = $1', [rows[0].id]);
       await removeStorageUsage(req.user.orgId, rows[0].size_bytes);
-      return res.status(204).send();
+      res.status(204).send(); return;
     }
     res.status(404).json({ error: 'File not found' });
   } catch (err: any) {
@@ -215,19 +215,19 @@ router.get('/usage', async (req: any, res) => {
 });
 
 // ── GET /api/upload/presigned ───────────────────────────────────────────────
-router.get('/presigned', async (req: any, res) => {
+router.get('/presigned', async (req: any, res): Promise<void> => {
   try {
     const { filename, mime_type, folder, file_size } = req.query as Record<string, string>;
     if (!filename || !mime_type) {
-      return res.status(400).json({ error: 'filename and mime_type are required' });
+      res.status(400).json({ error: 'filename and mime_type are required' }); return;
     }
 
     const quota = await checkQuota(req.user.orgId, Number(file_size || 0));
     if (!quota.allowed) {
-      return res.status(403).json({
+      res.status(403).json({
         error: `Storage full. ${formatBytes(quota.remaining)} remaining.`,
         code: 'STORAGE_QUOTA_EXCEEDED',
-      });
+      }); return;
     }
 
     const { uploadUrl, key, publicUrl } = await getPresignedUploadUrl({
@@ -247,7 +247,7 @@ router.get('/presigned', async (req: any, res) => {
 // Verify R2 connection
 router.get('/test', async (req: any, res) => {
   try {
-    const testBuffer = Buffer.from('FlowOS R2 test - ' + new Date().toISOString());
+    const testBuffer = Buffer.from('TasksDone R2 test - ' + new Date().toISOString());
     const result = await uploadToR2({
       buffer:   testBuffer,
       filename: 'connection-test.txt',

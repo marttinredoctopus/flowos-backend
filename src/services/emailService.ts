@@ -14,7 +14,11 @@ export type EmailJob =
   | { template: 'task_assigned'; to: string; data: { name: string; taskTitle: string; projectName: string; dueDate?: string; priority: string; taskUrl: string } }
   | { template: 'task_due_soon'; to: string; data: { name: string; taskTitle: string; taskUrl: string } }
   | { template: 'task_overdue'; to: string; data: { name: string; taskTitle: string; daysOverdue: number; taskUrl: string } }
-  | { template: 'comment_notification'; to: string; data: { name: string; actorName: string; taskTitle: string; comment: string; replyUrl: string } };
+  | { template: 'task_completed'; to: string; data: { name: string; completedBy: string; taskTitle: string; taskUrl: string } }
+  | { template: 'comment_notification'; to: string; data: { name: string; actorName: string; taskTitle: string; comment: string; replyUrl: string } }
+  | { template: 'invoice_created'; to: string; data: { name: string; invoiceNumber: string; clientName: string; amount: string; dueDate: string; invoiceUrl: string } }
+  | { template: 'invoice_paid'; to: string; data: { name: string; invoiceNumber: string; amount: string; paidAt: string } }
+  | { template: 'team_invite'; to: string; data: { inviterName: string; orgName: string; role: string; inviteUrl: string } };
 
 export async function queueEmail(job: EmailJob) {
   await emailQueue.add(job.template, job, {
@@ -56,10 +60,10 @@ function baseHtml(content: string) {
 </style></head>
 <body><div class="wrap">
   <div style="text-align:center;margin-bottom:24px">
-    <span style="font-size:22px;font-weight:800;background:linear-gradient(135deg,#7c6fe0,#4a9eff);-webkit-background-clip:text;-webkit-text-fill-color:transparent">FlowOS</span>
+    <span style="font-size:22px;font-weight:800;background:linear-gradient(135deg,#7c6fe0,#4a9eff);-webkit-background-clip:text;-webkit-text-fill-color:transparent">TasksDone</span>
   </div>
   <div class="card">${content}</div>
-  <div class="footer"><p>FlowOS — Agency Management Platform</p></div>
+  <div class="footer"><p>TasksDone — Agency Management Platform</p></div>
 </div></body></html>`;
 }
 
@@ -67,19 +71,19 @@ export function buildTemplate(job: EmailJob): { subject: string; html: string } 
   switch (job.template) {
     case 'welcome':
       return {
-        subject: `Welcome to FlowOS, ${job.data.name}! 🚀`,
+        subject: `Welcome to TasksDone, ${job.data.name}! 🚀`,
         html: baseHtml(`
-          <div class="header"><h1>Welcome to FlowOS 🚀</h1><p>Your workspace is ready</p></div>
+          <div class="header"><h1>Welcome to TasksDone 🚀</h1><p>Your workspace is ready</p></div>
           <div class="body">
             <h2>Hey ${job.data.name}, you're in!</h2>
             <p>Start managing your agency smarter today.</p>
-            <a href="${env.FRONTEND_URL}/dashboard" class="btn">Open FlowOS →</a>
+            <a href="${env.FRONTEND_URL}/dashboard" class="btn">Open TasksDone →</a>
           </div>`),
       };
 
     case 'email_verification':
       return {
-        subject: `${job.data.otp} is your FlowOS verification code`,
+        subject: `${job.data.otp} is your TasksDone verification code`,
         html: baseHtml(`
           <div class="header"><h1>Verify Your Email</h1><p>Enter this code to activate your account</p></div>
           <div class="body">
@@ -89,13 +93,13 @@ export function buildTemplate(job: EmailJob): { subject: string; html: string } 
               <div class="otp-code">${job.data.otp}</div>
               <div class="otp-hint">Expires in 15 minutes · Do not share this code</div>
             </div>
-            <p>If you didn't create a FlowOS account, you can safely ignore this email.</p>
+            <p>If you didn't create a TasksDone account, you can safely ignore this email.</p>
           </div>`),
       };
 
     case 'password_reset_otp':
       return {
-        subject: `${job.data.otp} — Reset your FlowOS password`,
+        subject: `${job.data.otp} — Reset your TasksDone password`,
         html: baseHtml(`
           <div class="header"><h1>Password Reset</h1></div>
           <div class="body">
@@ -158,8 +162,73 @@ export function buildTemplate(job: EmailJob): { subject: string; html: string } 
           </div>`),
       };
 
+    case 'task_completed':
+      return {
+        subject: `✅ Task completed: ${job.data.taskTitle}`,
+        html: baseHtml(`
+          <div class="header"><h1>Task Completed ✅</h1><p>Great progress!</p></div>
+          <div class="body">
+            <h2>Hi ${job.data.name},</h2>
+            <p><strong style="color:#fff">${job.data.completedBy}</strong> marked a task as done:</p>
+            <div style="background:#161b22;border:1px solid #21262d;border-radius:12px;padding:20px;margin:16px 0">
+              <p style="font-size:18px;font-weight:600;color:#fff;margin:0">${job.data.taskTitle}</p>
+            </div>
+            <a href="${job.data.taskUrl}" class="btn">View Task →</a>
+          </div>`),
+      };
+
+    case 'invoice_created':
+      return {
+        subject: `Invoice ${job.data.invoiceNumber} created for ${job.data.clientName}`,
+        html: baseHtml(`
+          <div class="header"><h1>New Invoice Created 🧾</h1><p>Invoice ready to send</p></div>
+          <div class="body">
+            <h2>Hi ${job.data.name},</h2>
+            <p>A new invoice has been created:</p>
+            <div style="background:#161b22;border:1px solid #21262d;border-radius:12px;padding:20px;margin:16px 0">
+              <table style="width:100%;border-collapse:collapse">
+                <tr><td style="color:#8b949e;padding:6px 0;font-size:14px">Invoice #</td><td style="color:#fff;font-weight:600;font-family:monospace">${job.data.invoiceNumber}</td></tr>
+                <tr><td style="color:#8b949e;padding:6px 0;font-size:14px">Client</td><td style="color:#fff;font-weight:600">${job.data.clientName}</td></tr>
+                <tr><td style="color:#8b949e;padding:6px 0;font-size:14px">Amount</td><td style="color:#4a9eff;font-weight:700;font-size:18px">${job.data.amount}</td></tr>
+                <tr><td style="color:#8b949e;padding:6px 0;font-size:14px">Due Date</td><td style="color:#fff">${job.data.dueDate}</td></tr>
+              </table>
+            </div>
+            <a href="${job.data.invoiceUrl}" class="btn">View Invoice →</a>
+          </div>`),
+      };
+
+    case 'invoice_paid':
+      return {
+        subject: `💰 Payment received — Invoice ${job.data.invoiceNumber}`,
+        html: baseHtml(`
+          <div class="header"><h1>Payment Received 💰</h1><p>Invoice marked as paid</p></div>
+          <div class="body">
+            <h2>Hi ${job.data.name},</h2>
+            <p>Great news! Invoice <strong style="color:#fff">${job.data.invoiceNumber}</strong> has been marked as paid.</p>
+            <div style="background:#0d2e1a;border:1px solid #1a4731;border-radius:12px;padding:20px;margin:16px 0;text-align:center">
+              <div style="font-size:32px;font-weight:800;color:#4ade80">${job.data.amount}</div>
+              <div style="color:#6ee7b7;font-size:14px;margin-top:4px">Paid on ${job.data.paidAt}</div>
+            </div>
+            <a href="${env.FRONTEND_URL}/dashboard/finance/invoices" class="btn">View Finances →</a>
+          </div>`),
+      };
+
+    case 'team_invite':
+      return {
+        subject: `You've been invited to join ${job.data.orgName} on TasksDone`,
+        html: baseHtml(`
+          <div class="header"><h1>You're Invited! 🎉</h1><p>Join your team on TasksDone</p></div>
+          <div class="body">
+            <h2>You have a new invitation</h2>
+            <p><strong style="color:#fff">${job.data.inviterName}</strong> has invited you to join <strong style="color:#7c6fe0">${job.data.orgName}</strong> as <strong style="color:#fff">${job.data.role}</strong>.</p>
+            <p style="color:#6e7681;font-size:13px">TasksDone is an agency management platform for managing projects, clients, tasks, invoices, and more.</p>
+            <a href="${job.data.inviteUrl}" class="btn">Accept Invitation →</a>
+            <p style="color:#6e7681;font-size:12px;margin-top:16px">This invitation expires in 7 days. If you didn't expect this, ignore it.</p>
+          </div>`),
+      };
+
     default:
-      return { subject: 'FlowOS notification', html: baseHtml('<div class="body"><p>You have a new notification.</p></div>') };
+      return { subject: 'TasksDone notification', html: baseHtml('<div class="body"><p>You have a new notification.</p></div>') };
   }
 }
 

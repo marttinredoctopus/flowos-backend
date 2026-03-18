@@ -8,6 +8,8 @@ import { pool } from '../config/database';
 export function initSocket(httpServer: HttpServer) {
   const allowedOrigins = [
     env.FRONTEND_URL,
+    'https://tasksdone.cloud',
+    'https://www.tasksdone.cloud',
     'http://localhost:3000',
     'http://localhost:3001',
   ].filter(Boolean);
@@ -15,7 +17,7 @@ export function initSocket(httpServer: HttpServer) {
   const io = new SocketServer(httpServer, {
     cors: {
       origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.railway.app')) {
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.railway.app') || origin.endsWith('.tasksdone.cloud')) {
           callback(null, true);
         } else {
           callback(new Error('CORS not allowed'));

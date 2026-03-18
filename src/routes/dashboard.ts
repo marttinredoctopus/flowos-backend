@@ -75,6 +75,50 @@ router.get('/member-stats', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/dashboard (alias — revenue + tasks + clients summary)
+router.get('/', async (req, res, next) => {
+  try {
+    const orgId = req.user!.orgId;
+    const [clients, tasks, invoices, monthlyRevenue] = await Promise.all([
+      pool.query(`SELECT COUNT(*) FROM clients WHERE org_id=$1`, [orgId]),
+      pool.query(`SELECT
+        COUNT(*) FILTER (WHERE status='done') as completed,
+        COUNT(*) FILTER (WHERE status != 'done') as pending
+        FROM tasks WHERE org_id=$1`, [orgId]),
+      pool.query(`SELECT
+        COALESCE(SUM(total_amount) FILTER (WHERE status='paid'),0) as total_revenue,
+        COALESCE(SUM(total_amount) FILTER (WHERE status IN ('sent','overdue')),0) as pending_revenue
+        FROM invoices WHERE org_id=$1`, [orgId]),
+      pool.query(`SELECT COALESCE(SUM(total_amount),0) as revenue FROM invoices
+        WHERE org_id=$1 AND status='paid'
+        AND paid_at >= date_trunc('month', CURRENT_DATE)`, [orgId]),
+    ]);
+    res.json({
+      totalClients:     parseInt(clients.rows[0].count),
+      completedTasks:   parseInt(tasks.rows[0].completed),
+      pendingTasks:     parseInt(tasks.rows[0].pending),
+      totalRevenue:     parseFloat(invoices.rows[0].total_revenue),
+      pendingRevenue:   parseFloat(invoices.rows[0].pending_revenue),
+      revenueThisMonth: parseFloat(monthlyRevenue.rows[0].revenue),
+    });
+  } catch (err) { next(err); }
+});
+
+// GET /api/dashboard/revenue-chart — last 6 months revenue
+router.get('/revenue-chart', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT TO_CHAR(date_trunc('month', paid_at), 'Mon YYYY') as month,
+             COALESCE(SUM(total_amount), 0) as revenue
+      FROM invoices
+      WHERE org_id=$1 AND status='paid' AND paid_at >= NOW() - INTERVAL '6 months'
+      GROUP BY date_trunc('month', paid_at)
+      ORDER BY date_trunc('month', paid_at)
+    `, [req.user!.orgId]);
+    res.json({ data: rows });
+  } catch (err) { next(err); }
+});
+
 // GET /api/dashboard/activity
 router.get('/activity', async (req, res, next) => {
   try {

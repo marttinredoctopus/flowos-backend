@@ -61,7 +61,7 @@ export async function register(
   email: string,
   password: string,
   orgName: string
-): Promise<{ userId: string; user: AuthUser; org: any }> {
+): Promise<{ userId: string; user: AuthUser; org: any; tokens: TokenPair }> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -79,25 +79,18 @@ export async function register(
     const passwordHash = await bcrypt.hash(password, 12);
     const userRes = await client.query(
       `INSERT INTO users (org_id, name, email, password_hash, role, email_verified)
-       VALUES ($1, $2, $3, $4, 'admin', FALSE) RETURNING id, org_id, name, email, role`,
+       VALUES ($1, $2, $3, $4, 'admin', TRUE) RETURNING id, org_id, name, email, role`,
       [org.id, name, email, passwordHash]
     );
     const row = userRes.rows[0];
 
     await client.query('COMMIT');
 
-    // Generate OTP and store in Redis (15 min TTL)
-    const otp = generateOTP();
-    await setEx(`verify:${row.id}`, 900, otp);
-    console.log(`[Auth] OTP generated for ${email}: ${otp}`);
-
-    // Queue verification email (non-blocking)
-    queueEmail({ template: 'email_verification', to: email, data: { name, otp } }).catch((e: any) => {
-      console.error('[Auth] Failed to queue verification email:', e.message);
-    });
-
     const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
-    return { userId: row.id, user, org };
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user.id);
+    await storeRefreshToken(user.id, refreshToken, false);
+    return { userId: row.id, user, org, tokens: { accessToken, refreshToken } };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

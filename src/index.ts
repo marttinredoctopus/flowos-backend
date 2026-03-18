@@ -44,6 +44,9 @@ import chatRoutes from './routes/chat';
 import dashboardRoutes from './routes/dashboard';
 import billingRoutes from './routes/billing';
 import adminRoutes from './routes/admin';
+import automationsRoutes from './routes/automations';
+import templatesRoutes from './routes/templates';
+import clientPortalRoutes from './routes/clientPortal';
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -52,17 +55,17 @@ app.set('trust proxy', 1);
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({
-  origin: (origin, callback) => {
+  origin: function(origin, callback) {
     const allowed = [
-      env.FRONTEND_URL,
+      'https://tasksdone.cloud',
+      'https://www.tasksdone.cloud',
       'http://localhost:3000',
       'http://localhost:3001',
-    ].filter(Boolean);
-    // Allow requests with no origin (mobile apps, curl, Postman) + Railway subdomains
-    if (!origin || allowed.some(o => origin.startsWith(o)) || origin.endsWith('.railway.app')) {
+    ];
+    if (!origin || allowed.includes(origin) || origin.endsWith('.tasksdone.cloud') || origin.endsWith('.railway.app')) {
       callback(null, true);
     } else {
-      callback(new Error(`CORS: ${origin} not allowed`));
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
@@ -110,6 +113,9 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/automations', automationsRoutes);
+app.use('/api/templates', templatesRoutes);
+app.use('/api/client-portal', clientPortalRoutes);
 app.use('/v1/public', publicApiRoutes);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', env: env.NODE_ENV, timestamp: new Date().toISOString() }));
@@ -126,7 +132,7 @@ runMigrations()
   .catch(err => console.error('[Migrations] Error (non-fatal):', err))
   .finally(() => {
     httpServer.listen(PORT, () => {
-      console.log(`[FlowOS] Backend running on port ${PORT} (${env.NODE_ENV})`);
+      console.log(`[TasksDone] Backend running on port ${PORT} (${env.NODE_ENV})`);
     });
   });
 

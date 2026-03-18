@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { pool } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
+import { queueEmail } from '../services/emailService';
+import { fireAutomations } from '../services/automationService';
 
 async function getNextInvoiceNumber(orgId: string): Promise<string> {
   const year = new Date().getFullYear();
@@ -62,7 +64,32 @@ export async function create(req: Request, res: Response, next: NextFunction) {
        JSON.stringify(lineItems), subtotal, taxAmount, discountAmount, total,
        notes || null, terms || null, req.user!.id, status === 'sent' ? new Date() : null]
     );
-    res.status(201).json(result.rows[0]);
+    const invoice = result.rows[0];
+
+    // Email notification to the creator
+    try {
+      const creatorRow = await pool.query('SELECT name, email FROM users WHERE id = $1', [req.user!.id]);
+      const clientRow  = clientId ? await pool.query('SELECT name FROM clients WHERE id = $1', [clientId]) : null;
+      if (creatorRow.rows[0]?.email) {
+        queueEmail({
+          template:  'invoice_created',
+          to:        creatorRow.rows[0].email,
+          data: {
+            name:          creatorRow.rows[0].name,
+            invoiceNumber,
+            clientName:    clientRow?.rows[0]?.name || 'No Client',
+            amount:        `${currency} ${Number(total).toLocaleString()}`,
+            dueDate:       new Date(dueDate).toLocaleDateString('en', { month: 'long', day: 'numeric', year: 'numeric' }),
+            invoiceUrl:    `${process.env.FRONTEND_URL}/dashboard/finance/invoices`,
+          },
+        }).catch(() => {});
+      }
+    } catch {}
+
+    // Fire automation
+    fireAutomations({ event: 'invoice_created', orgId: req.user!.orgId, actorId: req.user!.id, data: invoice }).catch(() => {});
+
+    res.status(201).json(invoice);
   } catch (err) { next(err); }
 }
 
@@ -125,6 +152,27 @@ export async function markPaid(req: Request, res: Response, next: NextFunction) 
       [req.user!.orgId, req.params.id, inv.rows[0].client_id, inv.rows[0].total, inv.rows[0].currency,
        method || 'Bank Transfer', reference || null, payNotes || null, paymentDate, req.user!.id]
     );
+
+    // Email notification to recorder
+    try {
+      const recorderRow = await pool.query('SELECT name, email FROM users WHERE id = $1', [req.user!.id]);
+      if (recorderRow.rows[0]?.email) {
+        queueEmail({
+          template:  'invoice_paid',
+          to:        recorderRow.rows[0].email,
+          data: {
+            name:          recorderRow.rows[0].name,
+            invoiceNumber: inv.rows[0].invoice_number,
+            amount:        `${inv.rows[0].currency} ${Number(inv.rows[0].total).toLocaleString()}`,
+            paidAt:        paymentDate.toLocaleDateString('en', { month: 'long', day: 'numeric', year: 'numeric' }),
+          },
+        }).catch(() => {});
+      }
+    } catch {}
+
+    // Fire automation
+    fireAutomations({ event: 'invoice_paid', orgId: req.user!.orgId, actorId: req.user!.id, data: inv.rows[0] }).catch(() => {});
+
     res.json({ success: true, payment: payment.rows[0] });
   } catch (err) { next(err); }
 }

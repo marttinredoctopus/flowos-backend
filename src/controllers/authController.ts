@@ -35,12 +35,14 @@ export async function register(req: Request, res: Response, next: NextFunction) 
   try {
     const data = registerSchema.parse(req.body);
     const result = await authService.register(data.name, data.email, data.password, data.orgName);
-    // Return userId only — user must verify email before getting access token
+    if (result.tokens.refreshToken) {
+      setCookie(res, result.tokens.refreshToken);
+    }
     res.status(201).json({
-      userId: result.userId,
-      email: data.email,
-      emailVerified: false,
-      message: 'Check your email for the verification code',
+      accessToken: result.tokens.accessToken,
+      user: result.user,
+      org: result.org,
+      emailVerified: true,
     });
   } catch (err) {
     next(err);

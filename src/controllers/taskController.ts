@@ -3,6 +3,7 @@ import { pool } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { triggerTaskAssigned, triggerCommentAdded } from '../services/notificationService';
 import { queueEmail, sendTaskAssignedEmail } from '../services/emailService';
+import { fireAutomations } from '../services/automationService';
 import { env } from '../config/env';
 
 async function getTaskAssignees(taskId: string) {
@@ -99,6 +100,9 @@ export async function create(req: Request, res: Response, next: NextFunction) {
         }
       }
     }
+
+    // Fire task_created automations
+    fireAutomations({ event: 'task_created', orgId: req.user!.orgId, actorId: req.user!.id, data: task }).catch(() => {});
 
     const assignees = await getTaskAssignees(task.id);
     res.status(201).json({ ...task, assignees });
@@ -199,6 +203,33 @@ export async function update(req: Request, res: Response, next: NextFunction) {
             priority: task.priority,
             dueDate: task.due_date ? new Date(task.due_date).toLocaleDateString() : undefined,
             taskUrl: `${env.FRONTEND_URL}/dashboard/tasks`,
+          },
+        }).catch(() => {});
+      }
+    }
+
+    // Fire automation events
+    if (status && status !== prev.rows[0].status) {
+      fireAutomations({ event: 'task_completed', orgId: req.user!.orgId, actorId: req.user!.id, data: task }).catch(() => {});
+    }
+
+    // Email reporter/creator when task is marked done
+    const prevStatus = prev.rows[0].status;
+    const isDone = (status === 'done' || status === 'completed') && prevStatus !== status;
+    if (isDone && task.reporter_id && task.reporter_id !== req.user!.id) {
+      const [reporterRow, actorRow] = await Promise.all([
+        pool.query('SELECT name, email FROM users WHERE id = $1', [task.reporter_id]),
+        pool.query('SELECT name FROM users WHERE id = $1', [req.user!.id]),
+      ]);
+      if (reporterRow.rows[0]?.email) {
+        queueEmail({
+          template: 'task_completed',
+          to: reporterRow.rows[0].email,
+          data: {
+            name:        reporterRow.rows[0].name,
+            completedBy: actorRow.rows[0]?.name || 'A team member',
+            taskTitle:   task.title,
+            taskUrl:     `${env.FRONTEND_URL}/dashboard/tasks`,
           },
         }).catch(() => {});
       }
