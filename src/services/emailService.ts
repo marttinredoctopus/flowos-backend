@@ -60,10 +60,10 @@ function baseHtml(content: string) {
 </style></head>
 <body><div class="wrap">
   <div style="text-align:center;margin-bottom:24px">
-    <span style="font-size:22px;font-weight:800;background:linear-gradient(135deg,#7c6fe0,#4a9eff);-webkit-background-clip:text;-webkit-text-fill-color:transparent">FlowOS</span>
+    <span style="font-size:22px;font-weight:800;background:linear-gradient(135deg,#7c6fe0,#4a9eff);-webkit-background-clip:text;-webkit-text-fill-color:transparent">TasksDone</span>
   </div>
   <div class="card">${content}</div>
-  <div class="footer"><p>FlowOS — Agency Management Platform</p></div>
+  <div class="footer"><p>TasksDone — Agency Management Platform</p></div>
 </div></body></html>`;
 }
 
@@ -71,19 +71,19 @@ export function buildTemplate(job: EmailJob): { subject: string; html: string } 
   switch (job.template) {
     case 'welcome':
       return {
-        subject: `Welcome to FlowOS, ${job.data.name}! 🚀`,
+        subject: `Welcome to TasksDone, ${job.data.name}! 🚀`,
         html: baseHtml(`
-          <div class="header"><h1>Welcome to FlowOS 🚀</h1><p>Your workspace is ready</p></div>
+          <div class="header"><h1>Welcome to TasksDone 🚀</h1><p>Your workspace is ready</p></div>
           <div class="body">
             <h2>Hey ${job.data.name}, you're in!</h2>
             <p>Start managing your agency smarter today.</p>
-            <a href="${env.FRONTEND_URL}/dashboard" class="btn">Open FlowOS →</a>
+            <a href="${env.FRONTEND_URL}/dashboard" class="btn">Open TasksDone →</a>
           </div>`),
       };
 
     case 'email_verification':
       return {
-        subject: `${job.data.otp} is your FlowOS verification code`,
+        subject: `${job.data.otp} is your TasksDone verification code`,
         html: baseHtml(`
           <div class="header"><h1>Verify Your Email</h1><p>Enter this code to activate your account</p></div>
           <div class="body">
@@ -93,13 +93,13 @@ export function buildTemplate(job: EmailJob): { subject: string; html: string } 
               <div class="otp-code">${job.data.otp}</div>
               <div class="otp-hint">Expires in 15 minutes · Do not share this code</div>
             </div>
-            <p>If you didn't create a FlowOS account, you can safely ignore this email.</p>
+            <p>If you didn't create a TasksDone account, you can safely ignore this email.</p>
           </div>`),
       };
 
     case 'password_reset_otp':
       return {
-        subject: `${job.data.otp} — Reset your FlowOS password`,
+        subject: `${job.data.otp} — Reset your TasksDone password`,
         html: baseHtml(`
           <div class="header"><h1>Password Reset</h1></div>
           <div class="body">
@@ -215,20 +215,20 @@ export function buildTemplate(job: EmailJob): { subject: string; html: string } 
 
     case 'team_invite':
       return {
-        subject: `You've been invited to join ${job.data.orgName} on FlowOS`,
+        subject: `You've been invited to join ${job.data.orgName} on TasksDone`,
         html: baseHtml(`
-          <div class="header"><h1>You're Invited! 🎉</h1><p>Join your team on FlowOS</p></div>
+          <div class="header"><h1>You're Invited! 🎉</h1><p>Join your team on TasksDone</p></div>
           <div class="body">
             <h2>You have a new invitation</h2>
             <p><strong style="color:#fff">${job.data.inviterName}</strong> has invited you to join <strong style="color:#7c6fe0">${job.data.orgName}</strong> as <strong style="color:#fff">${job.data.role}</strong>.</p>
-            <p style="color:#6e7681;font-size:13px">FlowOS is an agency management platform for managing projects, clients, tasks, invoices, and more.</p>
+            <p style="color:#6e7681;font-size:13px">TasksDone is an agency management platform for managing projects, clients, tasks, invoices, and more.</p>
             <a href="${job.data.inviteUrl}" class="btn">Accept Invitation →</a>
             <p style="color:#6e7681;font-size:12px;margin-top:16px">This invitation expires in 7 days. If you didn't expect this, ignore it.</p>
           </div>`),
       };
 
     default:
-      return { subject: 'FlowOS notification', html: baseHtml('<div class="body"><p>You have a new notification.</p></div>') };
+      return { subject: 'TasksDone notification', html: baseHtml('<div class="body"><p>You have a new notification.</p></div>') };
   }
 }
 

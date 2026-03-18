@@ -98,7 +98,7 @@ async function executeAction(
       const recipient = recipientRes.rows[0];
       if (!recipient?.email) return { skipped: 'no recipient email' };
 
-      const subject = interpolate(cfg.subject || 'FlowOS Notification', payload.data);
+      const subject = interpolate(cfg.subject || 'TasksDone Notification', payload.data);
       const body    = interpolate(cfg.body    || 'An automation was triggered.', payload.data);
 
       await queueEmail({
@@ -157,7 +157,7 @@ async function executeAction(
 
       const webhookRes = await fetch(webhookUrl, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'X-FlowOS-Event': payload.event },
+        headers: { 'Content-Type': 'application/json', 'X-TasksDone-Event': payload.event },
         body:    JSON.stringify({ event: payload.event, data: payload.data, org_id: payload.orgId }),
       });
       return { status: webhookRes.status };

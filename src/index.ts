@@ -132,7 +132,7 @@ runMigrations()
   .catch(err => console.error('[Migrations] Error (non-fatal):', err))
   .finally(() => {
     httpServer.listen(PORT, () => {
-      console.log(`[FlowOS] Backend running on port ${PORT} (${env.NODE_ENV})`);
+      console.log(`[TasksDone] Backend running on port ${PORT} (${env.NODE_ENV})`);
     });
   });
 

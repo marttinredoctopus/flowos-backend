@@ -247,7 +247,7 @@ router.get('/presigned', async (req: any, res): Promise<void> => {
 // Verify R2 connection
 router.get('/test', async (req: any, res) => {
   try {
-    const testBuffer = Buffer.from('FlowOS R2 test - ' + new Date().toISOString());
+    const testBuffer = Buffer.from('TasksDone R2 test - ' + new Date().toISOString());
     const result = await uploadToR2({
       buffer:   testBuffer,
       filename: 'connection-test.txt',

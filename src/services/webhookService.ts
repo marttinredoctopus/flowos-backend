@@ -40,9 +40,9 @@ async function deliverWebhook(hook: any, payload: any, deliveryId: string, attem
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-FlowOS-Signature': signature,
-        'X-FlowOS-Event': payload.event,
-        'X-FlowOS-Delivery': deliveryId,
+        'X-TasksDone-Signature': signature,
+        'X-TasksDone-Event': payload.event,
+        'X-TasksDone-Delivery': deliveryId,
       },
       body: payloadStr,
       signal: controller.signal,

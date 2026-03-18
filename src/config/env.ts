@@ -24,7 +24,7 @@ export const env = {
   SMTP_USER: process.env.SMTP_USER || '',
   SMTP_PASS: process.env.SMTP_PASS || '',
   EMAIL_FROM: process.env.EMAIL_FROM || 'noreply@flowos.io',
-  EMAIL_FROM_NAME: process.env.EMAIL_FROM_NAME || 'FlowOS',
+  EMAIL_FROM_NAME: process.env.EMAIL_FROM_NAME || 'TasksDone',
   VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY || '',
   VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY || '',
   VAPID_EMAIL: process.env.VAPID_EMAIL || 'noreply@flowos.io',
