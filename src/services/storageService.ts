@@ -8,16 +8,27 @@ import { randomUUID } from 'crypto';
 import path from 'path';
 import fs from 'fs';
 
-const BUCKET     = process.env.R2_BUCKET_NAME || 'flowos-files';
-const PUBLIC_URL = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
-const USE_R2     = !!(process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_KEY && process.env.R2_ACCOUNT_ID);
+// Support both CF_* and R2_* env var naming (CF_* takes priority)
+const CF_ACCESS_KEY  = process.env.CF_ACCESS_KEY  || process.env.R2_ACCESS_KEY_ID || '';
+const CF_SECRET_KEY  = process.env.CF_SECRET_KEY  || process.env.R2_SECRET_KEY    || '';
+const CF_BUCKET      = process.env.CF_BUCKET      || process.env.R2_BUCKET_NAME   || 'flowos-files';
+const CF_ACCOUNT_ID  = process.env.CF_ACCOUNT_ID  || process.env.R2_ACCOUNT_ID    || '';
+
+// CF_ENDPOINT can be a full endpoint URL; if not set, build from account ID
+const CF_ENDPOINT    = process.env.CF_ENDPOINT
+  ? process.env.CF_ENDPOINT.replace(/\/$/, '')
+  : CF_ACCOUNT_ID ? `https://${CF_ACCOUNT_ID}.r2.cloudflarestorage.com` : '';
+
+const BUCKET     = CF_BUCKET;
+const PUBLIC_URL = (process.env.R2_PUBLIC_URL || process.env.CF_PUBLIC_URL || '').replace(/\/$/, '');
+const USE_R2     = !!(CF_ACCESS_KEY && CF_SECRET_KEY && CF_ENDPOINT);
 
 const r2 = USE_R2 ? new S3Client({
   region: 'auto',
-  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  endpoint: CF_ENDPOINT,
   credentials: {
-    accessKeyId:     process.env.R2_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.R2_SECRET_KEY!,
+    accessKeyId:     CF_ACCESS_KEY,
+    secretAccessKey: CF_SECRET_KEY,
   },
 }) : null;
 
