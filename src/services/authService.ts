@@ -19,11 +19,12 @@ export interface AuthUser {
   name: string;
   email: string;
   role: string;
+  isSuperAdmin?: boolean;
 }
 
 function generateAccessToken(user: AuthUser): string {
   return jwt.sign(
-    { id: user.id, orgId: user.orgId, role: user.role },
+    { id: user.id, orgId: user.orgId, role: user.role, isSuperAdmin: user.isSuperAdmin || false },
     env.JWT_SECRET,
     { expiresIn: env.JWT_ACCESS_EXPIRES as any }
   );
@@ -60,7 +61,7 @@ export async function register(
   email: string,
   password: string,
   orgName: string
-): Promise<{ tokens: TokenPair; user: AuthUser; org: any }> {
+): Promise<{ userId: string; user: AuthUser; org: any }> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -86,14 +87,7 @@ export async function register(
     await client.query('COMMIT');
 
     const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
-    const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user.id);
-    await storeRefreshToken(user.id, refreshToken, false);
-
-    // Fire and forget welcome email (don't block registration)
-    queueEmail({ template: 'welcome', to: email, data: { name, orgName } }).catch(() => {});
-
-    return { tokens: { accessToken, refreshToken }, user, org };
+    return { userId: row.id, user, org };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -110,16 +104,19 @@ export async function verifyEmail(userId: string, otp: string): Promise<{ tokens
   await pool.query('UPDATE users SET email_verified = TRUE WHERE id = $1', [userId]);
 
   const res = await pool.query(
-    'SELECT id, org_id, name, email, role FROM users WHERE id = $1',
+    'SELECT id, org_id, name, email, role, is_super_admin FROM users WHERE id = $1',
     [userId]
   );
   const row = res.rows[0];
   if (!row) throw new AppError('User not found', 404);
 
-  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
+  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role, isSuperAdmin: row.is_super_admin };
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user.id);
   await storeRefreshToken(user.id, refreshToken, false);
+
+  // Send welcome email after verification
+  queueEmail({ template: 'welcome', to: user.email, data: { name: user.name, orgName: '' } }).catch(() => {});
 
   return { tokens: { accessToken, refreshToken }, user };
 }
@@ -135,6 +132,7 @@ export async function resendVerification(userId: string): Promise<void> {
 
   const otp = generateOTP();
   await setEx(`verify:${userId}`, 900, otp);
+  console.log(`[Auth] Resend OTP for ${row.email}: ${otp}`);
   await queueEmail({ template: 'email_verification', to: row.email, data: { name: row.name, otp } });
 }
 
@@ -144,7 +142,7 @@ export async function login(
   rememberMe = false
 ): Promise<{ tokens: TokenPair; user: AuthUser; emailVerified: boolean; userId?: string }> {
   const res = await pool.query(
-    'SELECT id, org_id, name, email, password_hash, role, is_active, email_verified FROM users WHERE email = $1',
+    'SELECT id, org_id, name, email, password_hash, role, is_active, email_verified, is_super_admin FROM users WHERE email = $1',
     [email]
   );
   const row = res.rows[0];
@@ -154,11 +152,10 @@ export async function login(
   }
   if (!row.is_active) throw new AppError('Account suspended', 403);
 
-  // If email not verified, return userId so frontend can show OTP screen
   if (!row.email_verified) {
-    // Re-send OTP
     const otp = generateOTP();
     await setEx(`verify:${row.id}`, 900, otp);
+    console.log(`[Auth] Login OTP for ${email}: ${otp}`);
     queueEmail({ template: 'email_verification', to: row.email, data: { name: row.name, otp } }).catch(() => {});
     return {
       tokens: { accessToken: '', refreshToken: '' },
@@ -170,7 +167,7 @@ export async function login(
 
   await pool.query('UPDATE users SET last_seen_at = NOW() WHERE id = $1', [row.id]);
 
-  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
+  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role, isSuperAdmin: row.is_super_admin };
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user.id);
   await storeRefreshToken(user.id, refreshToken, rememberMe);
@@ -203,13 +200,13 @@ export async function refreshTokens(oldRefreshToken: string): Promise<{ accessTo
   await pool.query('DELETE FROM refresh_tokens WHERE token = $1', [oldRefreshToken]);
 
   const userRes = await pool.query(
-    'SELECT id, org_id, name, email, role FROM users WHERE id = $1',
+    'SELECT id, org_id, name, email, role, is_super_admin FROM users WHERE id = $1',
     [payload.userId]
   );
   const row = userRes.rows[0];
   if (!row) throw new AppError('User not found', 401);
 
-  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role };
+  const user: AuthUser = { id: row.id, orgId: row.org_id, name: row.name, email: row.email, role: row.role, isSuperAdmin: row.is_super_admin };
   const accessToken = generateAccessToken(user);
   const newRefreshToken = generateRefreshToken(user.id);
   await storeRefreshToken(user.id, newRefreshToken, false);
@@ -222,11 +219,11 @@ export async function forgotPassword(email: string): Promise<void> {
     'SELECT id, name FROM users WHERE email = $1',
     [email]
   );
-  if (!res.rows[0]) return; // Always return 200
+  if (!res.rows[0]) return;
 
   const { id: userId, name } = res.rows[0];
   const otp = generateOTP();
-  await setEx(`reset:${userId}`, 3600, otp); // 1 hour TTL
+  await setEx(`reset:${userId}`, 3600, otp);
 
   await queueEmail({ template: 'password_reset_otp', to: email, data: { name, otp } });
 }
@@ -239,7 +236,6 @@ export async function verifyResetOtp(email: string, otp: string): Promise<string
   const stored = await get(`reset:${userId}`);
   if (!stored || stored !== otp) throw new AppError('Invalid or expired code', 400);
 
-  // Generate a temp token (store in Redis for 10 minutes)
   const tempToken = crypto.randomBytes(32).toString('hex');
   await setEx(`resettoken:${tempToken}`, 600, userId);
   await del(`reset:${userId}`);
