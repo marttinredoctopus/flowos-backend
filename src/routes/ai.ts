@@ -13,14 +13,13 @@ router.post('/competitor-analysis', analyzeCompetitors);
 
 // ── POST /api/ai/generate ────────────────────────────────────────────────────
 // Universal AI content generator
-router.post('/generate', async (req: any, res) => {
+router.post('/generate', async (req: any, res): Promise<void> => {
   try {
     const { type, brand, industry, platform, tone, context, count } = req.body;
     const VALID_TYPES = ['ad_copy', 'content_ideas', 'email', 'caption', 'hashtags', 'blog_outline'];
     if (!type || !VALID_TYPES.includes(type)) {
-      return res.status(400).json({
-        error: `type must be one of: ${VALID_TYPES.join(', ')}`,
-      });
+      res.status(400).json({ error: `type must be one of: ${VALID_TYPES.join(', ')}` });
+      return;
     }
     const result = await generateContent({ type, brand, industry, platform, tone, context, count });
     res.json(result);
