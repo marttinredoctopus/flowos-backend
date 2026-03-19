@@ -148,7 +148,7 @@ export async function me(req: Request, res: Response, next: NextFunction) {
   try {
     const { pool } = await import('../config/database');
     const result = await pool.query(
-      'SELECT id, org_id, name, email, role, avatar_url, last_seen_at, email_verified FROM users WHERE id = $1',
+      'SELECT u.id, u.org_id, u.name, u.email, u.role, u.avatar_url, u.last_seen_at, u.email_verified, COALESCE(o.onboarding_completed, false) as onboarding_completed FROM users u LEFT JOIN organizations o ON o.id = u.org_id WHERE u.id = $1',
       [req.user!.id]
     );
     if (!result.rows[0]) throw new AppError('User not found', 404);

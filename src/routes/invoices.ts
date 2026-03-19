@@ -1,9 +1,12 @@
 import { Router } from 'express';
-import { authenticate } from '../middleware/auth';
+import { authenticate, adminOrManager, staffOnly } from '../middleware/auth';
 import * as ctrl from '../controllers/invoicesController';
 
 const router = Router();
 router.use(authenticate);
+
+// Finance is admin/manager only — team members and clients cannot access
+router.use(adminOrManager);
 
 router.get('/', ctrl.list);
 router.post('/', ctrl.create);
