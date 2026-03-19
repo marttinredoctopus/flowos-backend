@@ -13,5 +13,6 @@ router.post('/', adminOrManager, checkPlanLimit('clients'), ctrl.create);
 router.get('/:id', ctrl.getOne);
 router.patch('/:id', adminOrManager, ctrl.update);
 router.delete('/:id', adminOrManager, ctrl.remove);
+router.post('/:id/share-token', adminOrManager, ctrl.generateShareToken);
 
 export default router;

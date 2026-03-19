@@ -118,6 +118,12 @@ app.use('/api/templates', templatesRoutes);
 app.use('/api/client-portal', clientPortalRoutes);
 app.use('/v1/public', publicApiRoutes);
 
+// Public portal access via share token (no auth)
+app.get('/api/portal/:token', async (req, res, next) => {
+  const ctrl = await import('./controllers/clientController');
+  return ctrl.getPortalByToken(req, res, next);
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok', env: env.NODE_ENV, timestamp: new Date().toISOString() }));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', env: env.NODE_ENV, timestamp: new Date().toISOString() }));
 
