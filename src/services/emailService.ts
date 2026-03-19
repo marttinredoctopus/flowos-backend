@@ -255,7 +255,7 @@ export async function sendTaskAssignedEmail(assigneeId: string, task: { id: stri
   }
 }
 
-export async function sendEmail(job: EmailJob) {
+export async function sendEmail(job: EmailJob): Promise<void> {
   const { subject, html } = buildTemplate(job);
   const recipient = resolveRecipient(job.to);
 
