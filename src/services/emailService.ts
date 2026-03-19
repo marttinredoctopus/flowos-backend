@@ -281,7 +281,7 @@ export async function sendEmail(job: EmailJob): Promise<void> {
       "INSERT INTO email_logs (recipient_email, template, status, sent_at) VALUES ($1, $2, 'sent', NOW())",
       [job.to, job.template]
     ).catch(() => {});
-    return result;
+    return;
   }
 
   // Fallback: SMTP
@@ -292,17 +292,16 @@ export async function sendEmail(job: EmailJob): Promise<void> {
     auth: { user: env.SMTP_USER, pass: env.SMTP_PASS },
   });
 
-  const result = await transport.sendMail({
+  const smtpResult = await transport.sendMail({
     from: `"${env.EMAIL_FROM_NAME}" <${env.EMAIL_FROM}>`,
     to: recipient,
     subject,
     html,
   });
 
-  console.log(`[Email] Sent via SMTP! ID: ${result.messageId}`);
+  console.log(`[Email] Sent via SMTP! ID: ${smtpResult.messageId}`);
   await pool.query(
     "INSERT INTO email_logs (recipient_email, template, status, sent_at) VALUES ($1, $2, 'sent', NOW())",
     [job.to, job.template]
   ).catch(() => {});
-  return result;
 }
