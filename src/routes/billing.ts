@@ -1,6 +1,6 @@
 import express, { Router, Request, Response, NextFunction } from 'express';
 import Stripe from 'stripe';
-import { authenticate } from '../middleware/auth';
+import { authenticate, adminOnly } from '../middleware/auth';
 import { pool } from '../config/database';
 import { PLANS, getPlan } from '../config/plans';
 import { env } from '../config/env';
@@ -23,8 +23,8 @@ router.get('/plans', (_req, res) => {
   res.json(plans);
 });
 
-// GET /api/billing/current
-router.get('/current', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+// GET /api/billing/current — admin only
+router.get('/current', authenticate, adminOnly, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const orgRes = await pool.query(
       `SELECT id, name, plan, billing_cycle, stripe_customer_id,
@@ -53,7 +53,7 @@ router.get('/current', authenticate, async (req: Request, res: Response, next: N
 });
 
 // POST /api/billing/create-checkout
-router.post('/create-checkout', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.post("/create-checkout", authenticate, adminOnly, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { plan_id, billing_cycle = 'monthly' } = req.body;
     if (!PLANS[plan_id as keyof typeof PLANS] || plan_id === 'starter') {
@@ -106,7 +106,7 @@ router.post('/create-checkout', authenticate, async (req: Request, res: Response
 });
 
 // POST /api/billing/create-portal
-router.post('/create-portal', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.post("/create-portal", authenticate, adminOnly, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const orgRes = await pool.query('SELECT stripe_customer_id FROM organizations WHERE id=$1', [req.user!.orgId]);
     const customerId = orgRes.rows[0]?.stripe_customer_id;
