@@ -49,6 +49,8 @@ import templatesRoutes from './routes/templates';
 import clientPortalRoutes from './routes/clientPortal';
 import commentsRoutes from './routes/comments';
 import activityRoutes from './routes/activity';
+import clientReportRoutes from './routes/clientReport';
+import contentSectionsRoutes from './routes/contentSections';
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -120,6 +122,8 @@ app.use('/api/templates', templatesRoutes);
 app.use('/api/client-portal', clientPortalRoutes);
 app.use('/api/comments', commentsRoutes);
 app.use('/api/activity', activityRoutes);
+app.use('/api/clients', clientReportRoutes);
+app.use('/api/content-sections', contentSectionsRoutes);
 app.use('/v1/public', publicApiRoutes);
 
 // Public portal access via share token (no auth)
