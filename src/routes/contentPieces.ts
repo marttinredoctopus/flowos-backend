@@ -9,6 +9,7 @@ router.get('/', ctrl.list);
 router.post('/', ctrl.create);
 router.patch('/:id', ctrl.update);
 router.delete('/:id', ctrl.remove);
+router.post('/:id/approve', ctrl.approveContent);
 
 // Copy bank
 router.get('/copy-bank', ctrl.listCopyBank);

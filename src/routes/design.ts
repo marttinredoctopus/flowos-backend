@@ -10,6 +10,7 @@ router.get('/briefs', ctrl.listBriefs);
 router.post('/briefs', ctrl.createBrief);
 router.patch('/briefs/:id', ctrl.updateBrief);
 router.delete('/briefs/:id', ctrl.deleteBrief);
+router.post('/briefs/:id/approve', ctrl.approveBrief);
 
 // Assets / Library
 router.get('/assets', ctrl.listAssets);

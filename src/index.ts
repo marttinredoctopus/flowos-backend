@@ -47,6 +47,8 @@ import adminRoutes from './routes/admin';
 import automationsRoutes from './routes/automations';
 import templatesRoutes from './routes/templates';
 import clientPortalRoutes from './routes/clientPortal';
+import commentsRoutes from './routes/comments';
+import activityRoutes from './routes/activity';
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -116,6 +118,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/automations', automationsRoutes);
 app.use('/api/templates', templatesRoutes);
 app.use('/api/client-portal', clientPortalRoutes);
+app.use('/api/comments', commentsRoutes);
+app.use('/api/activity', activityRoutes);
 app.use('/v1/public', publicApiRoutes);
 
 // Public portal access via share token (no auth)

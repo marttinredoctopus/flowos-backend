@@ -147,7 +147,7 @@ export async function getPortalByToken(req: Request, res: Response, next: NextFu
     const { token } = req.params;
     const result = await pool.query(
       `SELECT c.id, c.name, c.company, c.avatar_url, c.portal_enabled,
-              c.share_token_expires_at
+              c.share_token_expires_at, c.org_id
        FROM clients c WHERE c.share_token = $1`,
       [token]
     );
@@ -158,18 +158,89 @@ export async function getPortalByToken(req: Request, res: Response, next: NextFu
       throw new AppError('Portal link has expired', 410);
     }
 
-    const [projects, content] = await Promise.all([
+    const [projects, tasks, designs, content, activity] = await Promise.all([
       pool.query(
-        `SELECT id, name, status, progress FROM projects WHERE client_id = $1`,
+        `SELECT id, name, status, color, progress, start_date, end_date, service_type
+         FROM projects WHERE client_id = $1 ORDER BY created_at DESC`,
         [client.id]
       ),
       pool.query(
-        `SELECT id, title, platform, status, publish_at FROM content_pieces
-         WHERE client_id = $1 ORDER BY publish_at DESC LIMIT 20`,
+        `SELECT t.id, t.title, t.status, t.due_date,
+                p.name as project_name
+         FROM tasks t
+         LEFT JOIN projects p ON p.id = t.project_id
+         WHERE p.client_id = $1 OR t.client_id = $1
+         ORDER BY t.due_date ASC NULLS LAST LIMIT 50`,
+        [client.id]
+      ),
+      pool.query(
+        `SELECT id, title, asset_type, status, deadline, brief_content, rejection_note
+         FROM design_briefs WHERE client_id = $1 ORDER BY created_at DESC`,
+        [client.id]
+      ),
+      pool.query(
+        `SELECT id, title, platform, content_type, status, publish_at, caption,
+                media_urls, rejection_note
+         FROM content_pieces WHERE client_id = $1 ORDER BY publish_at ASC NULLS LAST`,
+        [client.id]
+      ),
+      pool.query(
+        `SELECT id, action, entity_name, actor_name, entity_type, created_at, meta
+         FROM activity_log WHERE client_id = $1
+         ORDER BY created_at DESC LIMIT 30`,
         [client.id]
       ),
     ]);
 
-    res.json({ client, projects: projects.rows, content: content.rows });
+    // Calculate overall progress
+    const allProjects = projects.rows;
+    const overallProgress = allProjects.length
+      ? Math.round(allProjects.reduce((s: number, p: any) => s + (p.progress || 0), 0) / allProjects.length)
+      : 0;
+
+    // Next deliverable
+    const upcoming = allProjects
+      .filter((p: any) => p.end_date && p.status !== 'completed')
+      .sort((a: any, b: any) => new Date(a.end_date).getTime() - new Date(b.end_date).getTime());
+    const nextDeliverable = upcoming[0]
+      ? { name: upcoming[0].name, date: upcoming[0].end_date }
+      : undefined;
+
+    const doneTasks = tasks.rows.filter((t: any) => t.status === 'done').length;
+    const pendingTasks = tasks.rows.filter((t: any) => t.status !== 'done').length;
+    const pendingApprovals = [
+      ...designs.rows.filter((d: any) => d.status === 'review'),
+      ...content.rows.filter((c: any) => c.status === 'review'),
+    ].length;
+
+    const stats = {
+      totalProjects: allProjects.length,
+      activeProjects: allProjects.filter((p: any) => p.status === 'active').length,
+      completedTasks: doneTasks,
+      pendingTasks,
+      pendingApprovals,
+      overallProgress,
+      nextDeliverable,
+    };
+
+    // Static AI-style insights based on data
+    const insights: string[] = [];
+    if (doneTasks > 0) insights.push(`${doneTasks} tasks completed this cycle`);
+    if (overallProgress >= 50) insights.push(`Project is ${overallProgress}% complete`);
+    if (content.rows.filter((c: any) => c.status === 'published').length > 0)
+      insights.push(`${content.rows.filter((c: any) => c.status === 'published').length} content pieces published`);
+    if (designs.rows.filter((d: any) => d.status === 'client_approved').length > 0)
+      insights.push(`${designs.rows.filter((d: any) => d.status === 'client_approved').length} designs approved`);
+
+    res.json({
+      client: { id: client.id, name: client.name, company: client.company, avatar_url: client.avatar_url },
+      projects: projects.rows,
+      tasks: tasks.rows,
+      designs: designs.rows,
+      content: content.rows,
+      activity: activity.rows,
+      insights,
+      stats,
+    });
   } catch (err) { next(err); }
 }

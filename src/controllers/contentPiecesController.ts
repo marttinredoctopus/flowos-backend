@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { pool } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
+import { logActivity } from './activityController';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
@@ -71,6 +72,56 @@ export async function remove(req: Request, res: Response, next: NextFunction) {
   try {
     await pool.query('DELETE FROM content_pieces WHERE id = $1 AND org_id = $2', [req.params.id, req.user!.orgId]);
     res.json({ success: true });
+  } catch (err) { next(err); }
+}
+
+/**
+ * POST /api/content-pieces/:id/approve
+ * body: { approved: boolean, note?: string }
+ */
+export async function approveContent(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { approved, note } = req.body;
+    const newStatus = approved ? 'approved' : 'revision_required';
+
+    const row = await pool.query(
+      `UPDATE content_pieces SET
+         status = $1,
+         approved_by = $2,
+         approved_at = $3,
+         rejection_note = $4,
+         updated_at = NOW()
+       WHERE id = $5 AND org_id = $6 RETURNING *`,
+      [newStatus, req.user!.id, approved ? new Date() : null,
+       approved ? null : (note || null), req.params.id, req.user!.orgId]
+    );
+    if (!row.rows[0]) throw new AppError('Content piece not found', 404);
+
+    const piece = row.rows[0];
+
+    // Notify assigned writer/designer
+    const recipients = [piece.assigned_writer, piece.assigned_designer].filter(Boolean);
+    for (const rid of recipients) {
+      await pool.query(
+        `INSERT INTO notifications (org_id, recipient_id, actor_id, type, title, body, entity_type, entity_id, action_url)
+         VALUES ($1,$2,$3,$4,$5,$6,'content',$7,$8)`,
+        [req.user!.orgId, rid, req.user!.id,
+         approved ? 'content_approved' : 'content_rejected',
+         approved ? `Content approved: ${piece.title}` : `Changes requested: ${piece.title}`,
+         note || (approved ? 'Client approved this content.' : 'Client requested revisions.'),
+         piece.id, `/dashboard/content`]
+      ).catch(() => {});
+    }
+
+    await logActivity({
+      orgId: req.user!.orgId, clientId: piece.client_id,
+      actorId: req.user!.id, actorName: req.user!.name || 'Team',
+      action: approved ? 'content_approved' : 'content_rejected',
+      entityType: 'content', entityId: piece.id, entityName: piece.title,
+      meta: { note },
+    }).catch(() => {});
+
+    res.json(row.rows[0]);
   } catch (err) { next(err); }
 }
 
