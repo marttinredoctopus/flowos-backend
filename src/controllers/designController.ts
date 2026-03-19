@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { pool } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
+import { logActivity } from './activityController';
 
 // ─── Design Briefs ────────────────────────────────────────────────────────────
 
@@ -59,6 +60,57 @@ export async function deleteBrief(req: Request, res: Response, next: NextFunctio
   try {
     await pool.query('DELETE FROM design_briefs WHERE id = $1 AND org_id = $2', [req.params.id, req.user!.orgId]);
     res.json({ success: true });
+  } catch (err) { next(err); }
+}
+
+/**
+ * POST /api/design/briefs/:id/approve
+ * body: { approved: boolean, note?: string }
+ */
+export async function approveBrief(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { approved, note } = req.body;
+    const newStatus = approved ? 'client_approved' : 'revision_required';
+
+    const row = await pool.query(
+      `UPDATE design_briefs SET
+         status = $1,
+         approved_by = $2,
+         approved_at = $3,
+         rejection_note = $4,
+         updated_at = NOW()
+       WHERE id = $5 AND org_id = $6
+       RETURNING *, (SELECT name FROM clients WHERE id = client_id) as client_name`,
+      [newStatus, req.user!.id, approved ? new Date() : null,
+       approved ? null : (note || null), req.params.id, req.user!.orgId]
+    );
+    if (!row.rows[0]) throw new AppError('Brief not found', 404);
+
+    const brief = row.rows[0];
+
+    // Notify assigned designer
+    if (brief.assigned_designer) {
+      await pool.query(
+        `INSERT INTO notifications (org_id, recipient_id, actor_id, type, title, body, entity_type, entity_id, action_url)
+         VALUES ($1,$2,$3,$4,$5,$6,'design',$7,$8)`,
+        [req.user!.orgId, brief.assigned_designer, req.user!.id,
+         approved ? 'design_approved' : 'design_rejected',
+         approved ? `Design approved: ${brief.title}` : `Changes requested: ${brief.title}`,
+         note || (approved ? 'Client approved your design.' : 'Client requested revisions.'),
+         brief.id, `/dashboard/creative/design`]
+      ).catch(() => {});
+    }
+
+    // Log activity
+    await logActivity({
+      orgId: req.user!.orgId, clientId: brief.client_id,
+      actorId: req.user!.id, actorName: req.user!.name || 'Team',
+      action: approved ? 'design_approved' : 'design_rejected',
+      entityType: 'design', entityId: brief.id, entityName: brief.title,
+      meta: { note },
+    }).catch(() => {});
+
+    res.json(row.rows[0]);
   } catch (err) { next(err); }
 }
 

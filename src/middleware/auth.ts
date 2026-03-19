@@ -6,6 +6,7 @@ export interface AuthPayload {
   id: string;
   orgId: string;
   role: string;           // 'admin' | 'manager' | 'member' | 'team' | 'client'
+  name?: string;
   clientId?: string;      // set only when role === 'client'
   isSuperAdmin?: boolean;
 }
