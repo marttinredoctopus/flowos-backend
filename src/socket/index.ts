@@ -61,14 +61,18 @@ export function initSocket(httpServer: HttpServer) {
     socket.on('chat_message', async (data: { channelId: string; body: string }) => {
       try {
         const result = await pool.query(
-          'INSERT INTO chat_messages (org_id, user_id, body) VALUES ($1, $2, $3) RETURNING id, created_at',
+          `INSERT INTO chat_messages (org_id, user_id, body) VALUES ($1, $2, $3)
+           RETURNING id, created_at`,
           [user.orgId, user.id, data.body]
         );
+        // Fetch user name from DB for the real-time message
+        const nameRow = await pool.query('SELECT name, avatar_url FROM users WHERE id=$1', [user.id]);
         const msg = {
           id: result.rows[0].id,
           body: data.body,
           user_id: user.id,
-          user_name: user.name,
+          user_name: nameRow.rows[0]?.name || 'Unknown',
+          avatar_url: nameRow.rows[0]?.avatar_url,
           created_at: result.rows[0].created_at,
         };
         io.to(`channel:${data.channelId}`).emit('chat:message', msg);
