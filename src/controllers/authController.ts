@@ -22,10 +22,12 @@ const verifyResetOtpSchema = z.object({ email: z.string().email(), otp: z.string
 const resetPasswordNewSchema = z.object({ tempToken: z.string(), newPassword: z.string().min(8) });
 
 function setCookie(res: Response, token: string, rememberMe = false) {
+  // Use secure cross-origin cookies when serving over HTTPS (api.* vs app domain)
+  const isLocalDev = !process.env.FRONTEND_URL?.startsWith('https');
   res.cookie('refresh_token', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: !isLocalDev,
+    sameSite: isLocalDev ? 'lax' : 'none',
     maxAge: (rememberMe ? 30 : 7) * 24 * 60 * 60 * 1000,
     path: '/api/auth',
   });
