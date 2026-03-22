@@ -12,23 +12,29 @@ router.get('/stats', async (req, res, next) => {
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
-    const [projects, tasks, team, invoices, overdue, dueToday] = await Promise.all([
+    const [projects, tasks, team, invoices, overdue, dueToday, clients, pendingApprovals] = await Promise.all([
       pool.query(`SELECT COUNT(*) FROM projects WHERE org_id=$1 AND status NOT IN ('completed','cancelled')`, [orgId]),
       pool.query(`SELECT COUNT(*) FROM tasks WHERE org_id=$1 AND status != 'done'`, [orgId]),
       pool.query(`SELECT COUNT(*) FROM users WHERE org_id=$1`, [orgId]),
       pool.query(`SELECT COUNT(*), COALESCE(SUM(total_amount),0) as amount FROM invoices WHERE org_id=$1 AND status='sent'`, [orgId]),
       pool.query(`SELECT COUNT(*) FROM tasks WHERE org_id=$1 AND status != 'done' AND due_date < NOW()`, [orgId]),
       pool.query(`SELECT COUNT(*) FROM tasks WHERE org_id=$1 AND status != 'done' AND due_date::date = $2`, [orgId, todayStr]),
+      pool.query(`SELECT COUNT(*) FROM clients WHERE org_id=$1`, [orgId]),
+      pool.query(`SELECT
+        (SELECT COUNT(*) FROM design_briefs WHERE org_id=$1 AND status='pending_review') +
+        (SELECT COUNT(*) FROM content_pieces WHERE org_id=$1 AND status='pending_review') as count`, [orgId]),
     ]);
 
     res.json({
-      activeProjects:  parseInt(projects.rows[0].count),
-      openTasks:       parseInt(tasks.rows[0].count),
-      teamCount:       parseInt(team.rows[0].count),
-      pendingInvoices: parseInt(invoices.rows[0].count),
-      pendingAmount:   parseFloat(invoices.rows[0].amount),
-      overdueCount:    parseInt(overdue.rows[0].count),
-      dueToday:        parseInt(dueToday.rows[0].count),
+      activeProjects:   parseInt(projects.rows[0].count),
+      openTasks:        parseInt(tasks.rows[0].count),
+      teamCount:        parseInt(team.rows[0].count),
+      pendingInvoices:  parseInt(invoices.rows[0].count),
+      pendingAmount:    parseFloat(invoices.rows[0].amount),
+      overdueCount:     parseInt(overdue.rows[0].count),
+      dueToday:         parseInt(dueToday.rows[0].count),
+      activeClients:    parseInt(clients.rows[0].count),
+      pendingApprovals: parseInt(pendingApprovals.rows[0].count || '0'),
     });
   } catch (err) { next(err); }
 });
@@ -123,19 +129,51 @@ router.get('/revenue-chart', async (req, res, next) => {
 router.get('/activity', async (req, res, next) => {
   try {
     const { orgId } = req.user!;
-    const limit = parseInt(String(req.query.limit || '10'));
-    // Return recent task completions and project creations as activity feed
-    const result = await pool.query(`
-      SELECT 'task_done' as type, t.title, u.name as actor, t.updated_at as ts
-      FROM tasks t JOIN users u ON u.id=t.assignee_id
-      WHERE t.org_id=$1 AND t.status='done' AND t.updated_at > NOW()-INTERVAL '7 days'
-      ORDER BY t.updated_at DESC LIMIT $2
-    `, [orgId, limit]);
-    const activities = result.rows.map(r => ({
-      icon: '✅',
-      text: `${r.actor} completed "${r.title}"`,
-      time: new Date(r.ts).toLocaleDateString('en', { month: 'short', day: 'numeric' }),
-    }));
+    const limit = parseInt(String(req.query.limit || '15'));
+
+    // Try activity_log first, fall back to task completions
+    let activities: any[] = [];
+    try {
+      const logResult = await pool.query(`
+        SELECT al.action, al.entity_type, al.entity_name, al.actor_name, al.created_at,
+               c.name as client_name
+        FROM activity_log al
+        LEFT JOIN clients c ON c.id = al.client_id
+        WHERE al.org_id=$1
+        ORDER BY al.created_at DESC LIMIT $2
+      `, [orgId, limit]);
+      if (logResult.rows.length > 0) {
+        activities = logResult.rows.map(r => {
+          const icons: Record<string, string> = {
+            task_completed: '✅', task_created: '📋', comment_added: '💬',
+            design_approved: '🎨', design_revision: '✏️', content_approved: '📝',
+            client_created: '👤', project_created: '🚀', file_uploaded: '📁',
+          };
+          return {
+            icon: icons[r.action] || '•',
+            text: `${r.actor_name || 'Someone'} — ${r.action?.replace(/_/g,' ')} ${r.entity_name ? `"${r.entity_name}"` : ''}${r.client_name ? ` · ${r.client_name}` : ''}`,
+            time: new Date(r.created_at).toLocaleDateString('en', { month: 'short', day: 'numeric' }),
+            ts: r.created_at,
+          };
+        });
+      }
+    } catch {}
+
+    if (activities.length === 0) {
+      const result = await pool.query(`
+        SELECT 'task_done' as type, t.title, u.name as actor, t.updated_at as ts
+        FROM tasks t LEFT JOIN users u ON u.id=t.assignee_id
+        WHERE t.org_id=$1 AND t.status='done' AND t.updated_at > NOW()-INTERVAL '14 days'
+        ORDER BY t.updated_at DESC LIMIT $2
+      `, [orgId, limit]);
+      activities = result.rows.map(r => ({
+        icon: '✅',
+        text: `${r.actor || 'Team'} completed "${r.title}"`,
+        time: new Date(r.ts).toLocaleDateString('en', { month: 'short', day: 'numeric' }),
+        ts: r.ts,
+      }));
+    }
+
     res.json({ activities });
   } catch (err) { next(err); }
 });
