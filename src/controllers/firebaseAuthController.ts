@@ -135,7 +135,7 @@ export async function firebaseAuth(req: Request, res: Response, next: NextFuncti
       );
 
       setCookie(res, refreshToken);
-      res.json({ user, accessToken });
+      return res.json({ user, accessToken });
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -146,6 +146,6 @@ export async function firebaseAuth(req: Request, res: Response, next: NextFuncti
     if (err.isFirebaseError) {
       return res.status(401).json({ error: 'Invalid or expired Firebase token' });
     }
-    next(err);
+    return next(err);
   }
 }
