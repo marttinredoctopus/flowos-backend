@@ -63,8 +63,10 @@ app.use(cors({
     const allowed = [
       'https://tasksdone.cloud',
       'https://www.tasksdone.cloud',
+      'https://admin.tasksdone.cloud',
       'http://localhost:3000',
       'http://localhost:3001',
+      'http://localhost:3002',
     ];
     if (!origin || allowed.includes(origin) || origin.endsWith('.tasksdone.cloud') || origin.endsWith('.railway.app')) {
       callback(null, true);
