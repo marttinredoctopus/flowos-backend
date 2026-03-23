@@ -20,7 +20,7 @@ router.get('/connect', authenticate, async (req: Request, res: Response, next: N
 });
 
 // ─── OAuth: Callback ─────────────────────────────────────────────────────────
-router.get('/callback', async (req: Request, res: Response) => {
+router.get('/callback', async (req: Request, res: Response): Promise<void> => {
   const { code, state, error } = req.query as Record<string, string>;
   const frontendUrl = env.FRONTEND_URL;
 
@@ -211,7 +211,7 @@ router.delete('/shares/:id', authenticate, async (req: Request, res: Response, n
 });
 
 // ─── Public Report (no auth) ──────────────────────────────────────────────────
-router.get('/public/:token', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/public/:token', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { token } = req.params;
     const { password } = req.query as Record<string, string>;
