@@ -78,7 +78,8 @@ router.post('/connect-token', authenticate, async (req: Request, res: Response, 
     res.json({ success: true, data: { accounts_connected: accounts.length } });
   } catch (err: any) {
     if (err.message?.includes('Meta API error')) {
-      res.status(400).json({ error: 'Invalid or expired access token' }); return;
+      const detail = err.message.replace('Meta API error: ', '');
+      res.status(400).json({ error: detail }); return;
     }
     next(err);
   }
