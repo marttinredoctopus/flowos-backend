@@ -33,6 +33,7 @@ export const env = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
   GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL || '',
+  FIREBASE_API_KEY: process.env.FIREBASE_API_KEY || '',
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '',
   STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY || '',
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
@@ -48,4 +49,8 @@ export const env = {
   R2_SECRET_KEY:    process.env.R2_SECRET_KEY     || '',
   R2_BUCKET_NAME:   process.env.R2_BUCKET_NAME    || 'flowos-files',
   R2_PUBLIC_URL:    process.env.R2_PUBLIC_URL     || '',
+  // Meta Ads
+  META_APP_ID:     process.env.META_APP_ID     || '',
+  META_APP_SECRET: process.env.META_APP_SECRET || '',
+  BACKEND_URL:     process.env.BACKEND_URL     || 'https://api.tasksdone.cloud',
 };

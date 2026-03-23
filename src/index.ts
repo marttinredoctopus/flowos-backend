@@ -51,6 +51,7 @@ import commentsRoutes from './routes/comments';
 import activityRoutes from './routes/activity';
 import clientReportRoutes from './routes/clientReport';
 import contentSectionsRoutes from './routes/contentSections';
+import metaAdsRoutes from './routes/metaAds';
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -63,8 +64,10 @@ app.use(cors({
     const allowed = [
       'https://tasksdone.cloud',
       'https://www.tasksdone.cloud',
+      'https://admin.tasksdone.cloud',
       'http://localhost:3000',
       'http://localhost:3001',
+      'http://localhost:3002',
     ];
     if (!origin || allowed.includes(origin) || origin.endsWith('.tasksdone.cloud') || origin.endsWith('.railway.app')) {
       callback(null, true);
@@ -124,6 +127,7 @@ app.use('/api/comments', commentsRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/clients', clientReportRoutes);
 app.use('/api/content-sections', contentSectionsRoutes);
+app.use('/api/meta-ads', metaAdsRoutes);
 app.use('/v1/public', publicApiRoutes);
 
 // Public portal access via share token (no auth)
@@ -139,6 +143,24 @@ app.use(errorHandler);
 
 initSocket(httpServer);
 startEmailWorker();
+
+// Meta Ads: sync all active accounts every 6 hours
+import('./services/metaAdsService').then(({ MetaAdsService }) => {
+  import('node-cron').then(cron => {
+    cron.schedule('0 */6 * * *', async () => {
+      try {
+        const { query: dbQuery } = await import('./config/database');
+        const orgs = await dbQuery<{ org_id: string }>(`SELECT DISTINCT org_id FROM meta_ad_accounts WHERE is_active=TRUE`);
+        for (const org of orgs) {
+          MetaAdsService.syncOrgAccounts(org.org_id).catch(console.error);
+        }
+      } catch (err) {
+        console.error('[MetaAds] Cron sync error:', err);
+      }
+    });
+    console.log('[MetaAds] Cron job scheduled (every 6h)');
+  });
+});
 
 const PORT = env.PORT;
 
