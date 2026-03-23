@@ -1,10 +1,20 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+function buildDatabaseUrl(): string {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  const host = process.env.DB_HOST || 'localhost';
+  const port = process.env.DB_PORT || '5432';
+  const name = process.env.DB_NAME || 'flowos';
+  const user = process.env.DB_USER || 'postgres';
+  const pass = encodeURIComponent(process.env.DB_PASSWORD || '');
+  return `postgresql://${user}:${pass}@${host}:${port}/${name}`;
+}
+
 export const env = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: parseInt(process.env.PORT || '3001', 10),
-  DATABASE_URL: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/flowos',
+  DATABASE_URL: buildDatabaseUrl(),
   REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
   DB: {
     HOST: process.env.DB_HOST || 'localhost',
