@@ -25,12 +25,12 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
   const frontendUrl = env.FRONTEND_URL;
 
   if (error || !code || !state) {
-    return res.redirect(`${frontendUrl}/dashboard/campaigns?meta_error=cancelled`);
+    res.redirect(`${frontendUrl}/dashboard/campaigns?meta_error=cancelled`); return;
   }
 
   try {
     const orgId = await redisGet(`meta_oauth_${state}`);
-    if (!orgId) return res.redirect(`${frontendUrl}/dashboard/campaigns?meta_error=expired`);
+    if (!orgId) { res.redirect(`${frontendUrl}/dashboard/campaigns?meta_error=expired`); return; }
 
     const accessToken = await MetaAdsService.exchangeCode(code);
     const userInfo = await MetaAdsService.getMetaUser(accessToken);
@@ -45,13 +45,11 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
       `, [orgId, userInfo.id, accountId, account.name, accessToken, account.currency, account.timezone_name]);
     }
 
-    // Trigger initial sync in background (fire and forget)
     MetaAdsService.syncOrgAccounts(orgId).catch(console.error);
-
-    return res.redirect(`${frontendUrl}/dashboard/campaigns?meta_connected=true`);
+    res.redirect(`${frontendUrl}/dashboard/campaigns?meta_connected=true`);
   } catch (err: any) {
     console.error('[MetaAds] OAuth callback error:', err.message);
-    return res.redirect(`${frontendUrl}/dashboard/campaigns?meta_error=failed`);
+    res.redirect(`${frontendUrl}/dashboard/campaigns?meta_error=failed`);
   }
 });
 
@@ -220,16 +218,16 @@ router.get('/public/:token', async (req: Request, res: Response, next: NextFunct
       `SELECT * FROM campaign_report_shares WHERE token = $1 AND is_active = TRUE`,
       [token]
     );
-    if (!share) return res.status(404).json({ error: 'Report not found' });
+    if (!share) { res.status(404).json({ error: 'Report not found' }); return; }
 
     if (share.expires_at && new Date(share.expires_at) < new Date()) {
-      return res.status(410).json({ error: 'Report link has expired' });
+      res.status(410).json({ error: 'Report link has expired' }); return;
     }
 
     if (share.password) {
-      if (!password) return res.status(401).json({ error: 'Password required', password_required: true });
+      if (!password) { res.status(401).json({ error: 'Password required', password_required: true }); return; }
       const valid = await bcrypt.compare(password, share.password);
-      if (!valid) return res.status(401).json({ error: 'Incorrect password' });
+      if (!valid) { res.status(401).json({ error: 'Incorrect password' }); return; }
     }
 
     await query(`UPDATE campaign_report_shares SET views = views + 1 WHERE token = $1`, [token]);
