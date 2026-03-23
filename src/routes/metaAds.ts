@@ -54,6 +54,36 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+// ─── Connect via Manual Token ─────────────────────────────────────────────────
+router.post('/connect-token', authenticate, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { access_token } = req.body;
+    if (!access_token) { res.status(400).json({ error: 'access_token is required' }); return; }
+
+    const userInfo = await MetaAdsService.getMetaUser(access_token);
+    const accounts = await MetaAdsService.getAdAccounts(access_token);
+
+    if (!accounts.length) { res.status(400).json({ error: 'No ad accounts found for this token' }); return; }
+
+    for (const account of accounts.slice(0, 10)) {
+      const accountId = account.id.replace('act_', '');
+      await query(`
+        INSERT INTO meta_ad_accounts (org_id, meta_user_id, meta_account_id, account_name, access_token, currency, timezone, connected_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT DO NOTHING
+      `, [req.user!.orgId, userInfo.id, accountId, account.name, access_token, account.currency, account.timezone_name, req.user!.id]);
+    }
+
+    MetaAdsService.syncOrgAccounts(req.user!.orgId).catch(console.error);
+    res.json({ success: true, data: { accounts_connected: accounts.length } });
+  } catch (err: any) {
+    if (err.message?.includes('Meta API error')) {
+      res.status(400).json({ error: 'Invalid or expired access token' }); return;
+    }
+    next(err);
+  }
+});
+
 // ─── Get Connected Accounts ───────────────────────────────────────────────────
 router.get('/accounts', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
