@@ -49,4 +49,8 @@ export const env = {
   R2_SECRET_KEY:    process.env.R2_SECRET_KEY     || '',
   R2_BUCKET_NAME:   process.env.R2_BUCKET_NAME    || 'flowos-files',
   R2_PUBLIC_URL:    process.env.R2_PUBLIC_URL     || '',
+  // Meta Ads
+  META_APP_ID:     process.env.META_APP_ID     || '',
+  META_APP_SECRET: process.env.META_APP_SECRET || '',
+  BACKEND_URL:     process.env.BACKEND_URL     || 'https://api.tasksdone.cloud',
 };
