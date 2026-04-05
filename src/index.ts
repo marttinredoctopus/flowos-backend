@@ -144,7 +144,7 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok', env: env.NODE_ENV
 app.use(errorHandler);
 
 initSocket(httpServer);
-startEmailWorker();
+// startEmailWorker(); // disabled to run locally without Redis
 
 // Meta Ads: sync all active accounts every 6 hours
 import('./services/metaAdsService').then(({ MetaAdsService }) => {

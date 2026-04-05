@@ -5,7 +5,7 @@ import { pool } from '../config/database';
 import { Queue } from 'bullmq';
 import { redis } from '../config/redis';
 
-export const emailQueue = new Queue('emails', { connection: redis as any });
+// export const emailQueue = new Queue('emails', { connection: redis as any });
 
 export type EmailJob =
   | { template: 'welcome'; to: string; data: { name: string; orgName: string } }
@@ -21,10 +21,12 @@ export type EmailJob =
   | { template: 'team_invite'; to: string; data: { inviterName: string; orgName: string; role: string; inviteUrl: string } };
 
 export async function queueEmail(job: EmailJob) {
-  await emailQueue.add(job.template, job, {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 5000 },
-  });
+  // Execute immediately since local Redis is not active
+  try {
+    await sendEmail(job);
+  } catch (err) {
+    console.error('Failed to send email inline:', err);
+  }
 }
 
 // Resend sandbox: only delivers to the account owner's email unless domain is verified

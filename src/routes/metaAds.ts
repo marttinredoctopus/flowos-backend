@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { authenticate } from '../middleware/auth';
 import { MetaAdsService } from '../services/metaAdsService';
+import { OpenRouterService } from '../services/openRouterService';
 import { query, queryOne } from '../config/database';
 import { setEx, get as redisGet } from '../config/redis';
 import { env } from '../config/env';
@@ -20,17 +21,17 @@ router.get('/connect', authenticate, async (req: Request, res: Response, next: N
 });
 
 // ─── OAuth: Callback ─────────────────────────────────────────────────────────
-router.get('/callback', async (req: Request, res: Response) => {
+router.get('/callback', async (req: Request, res: Response): Promise<void> => {
   const { code, state, error } = req.query as Record<string, string>;
   const frontendUrl = env.FRONTEND_URL;
 
   if (error || !code || !state) {
-    return res.redirect(`${frontendUrl}/dashboard/campaigns?meta_error=cancelled`);
+    res.redirect(`${frontendUrl}/dashboard/campaigns?meta_error=cancelled`); return;
   }
 
   try {
     const orgId = await redisGet(`meta_oauth_${state}`);
-    if (!orgId) return res.redirect(`${frontendUrl}/dashboard/campaigns?meta_error=expired`);
+    if (!orgId) { res.redirect(`${frontendUrl}/dashboard/campaigns?meta_error=expired`); return; }
 
     const accessToken = await MetaAdsService.exchangeCode(code);
     const userInfo = await MetaAdsService.getMetaUser(accessToken);
@@ -45,13 +46,42 @@ router.get('/callback', async (req: Request, res: Response) => {
       `, [orgId, userInfo.id, accountId, account.name, accessToken, account.currency, account.timezone_name]);
     }
 
-    // Trigger initial sync in background (fire and forget)
     MetaAdsService.syncOrgAccounts(orgId).catch(console.error);
-
-    return res.redirect(`${frontendUrl}/dashboard/campaigns?meta_connected=true`);
+    res.redirect(`${frontendUrl}/dashboard/campaigns?meta_connected=true`);
   } catch (err: any) {
     console.error('[MetaAds] OAuth callback error:', err.message);
-    return res.redirect(`${frontendUrl}/dashboard/campaigns?meta_error=failed`);
+    res.redirect(`${frontendUrl}/dashboard/campaigns?meta_error=failed`);
+  }
+});
+
+// ─── Connect via Manual Token ─────────────────────────────────────────────────
+router.post('/connect-token', authenticate, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { access_token } = req.body;
+    if (!access_token) { res.status(400).json({ error: 'access_token is required' }); return; }
+
+    const userInfo = await MetaAdsService.getMetaUser(access_token);
+    const accounts = await MetaAdsService.getAdAccounts(access_token);
+
+    if (!accounts.length) { res.status(400).json({ error: 'No ad accounts found for this token' }); return; }
+
+    for (const account of accounts.slice(0, 10)) {
+      const accountId = account.id.replace('act_', '');
+      await query(`
+        INSERT INTO meta_ad_accounts (org_id, meta_user_id, meta_account_id, account_name, access_token, currency, timezone, connected_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT DO NOTHING
+      `, [req.user!.orgId, userInfo.id, accountId, account.name, access_token, account.currency, account.timezone_name, req.user!.id]);
+    }
+
+    MetaAdsService.syncOrgAccounts(req.user!.orgId).catch(console.error);
+    res.json({ success: true, data: { accounts_connected: accounts.length } });
+  } catch (err: any) {
+    if (err.message?.includes('Meta API error')) {
+      const detail = err.message.replace('Meta API error: ', '');
+      res.status(400).json({ error: detail }); return;
+    }
+    next(err);
   }
 });
 
@@ -210,8 +240,81 @@ router.delete('/shares/:id', authenticate, async (req: Request, res: Response, n
   } catch (err) { next(err); }
 });
 
+// ─── AI Campaign Analysis ─────────────────────────────────────────────────────
+router.post('/campaigns/:id/analyze', authenticate, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { date_start, date_end } = req.body as Record<string, string>;
+    const start = date_start || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const end   = date_end   || new Date().toISOString().split('T')[0];
+
+    const row = await queryOne<any>(`
+      SELECT
+        c.id, c.name, c.status, c.objective,
+        COALESCE(SUM(s.spend), 0)            AS spend,
+        COALESCE(SUM(s.conversion_value), 0) AS revenue,
+        COALESCE(SUM(s.impressions), 0)      AS impressions,
+        COALESCE(SUM(s.clicks), 0)           AS clicks,
+        COALESCE(SUM(s.conversions), 0)      AS conversions,
+        CASE WHEN SUM(s.clicks) > 0      THEN SUM(s.spend) / SUM(s.clicks)                    ELSE 0 END AS cpc,
+        CASE WHEN SUM(s.impressions) > 0 THEN SUM(s.spend) / SUM(s.impressions) * 1000        ELSE 0 END AS cpm,
+        CASE WHEN SUM(s.impressions) > 0 THEN SUM(s.clicks)::FLOAT / SUM(s.impressions) * 100 ELSE 0 END AS ctr,
+        CASE WHEN SUM(s.spend) > 0       THEN SUM(s.conversion_value) / SUM(s.spend)          ELSE 0 END AS roas,
+        CASE WHEN SUM(s.reach) > 0       THEN SUM(s.impressions)::FLOAT / SUM(s.reach)        ELSE 1 END AS frequency
+      FROM meta_campaigns c
+      LEFT JOIN meta_campaign_stats s ON s.campaign_id = c.id AND s.date BETWEEN $2 AND $3
+      WHERE c.id = $1 AND c.org_id = $4
+      GROUP BY c.id, c.name, c.status, c.objective
+    `, [id, start, end, req.user!.orgId]);
+
+    if (!row) { res.status(404).json({ error: 'Campaign not found' }); return; }
+
+    const report = await OpenRouterService.analyzeCampaign({
+      name:        row.name,
+      status:      row.status,
+      objective:   row.objective,
+      date_start:  start,
+      date_end:    end,
+      spend:       Number(row.spend),
+      revenue:     Number(row.revenue),
+      roas:        Number(row.roas),
+      impressions: Number(row.impressions),
+      clicks:      Number(row.clicks),
+      ctr:         Number(row.ctr),
+      cpc:         Number(row.cpc),
+      cpm:         Number(row.cpm),
+      conversions: Number(row.conversions),
+      frequency:   Number(row.frequency),
+    });
+
+    // Save report (best-effort — table may not exist yet)
+    try {
+      await query(`
+        CREATE TABLE IF NOT EXISTS campaign_ai_reports (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          campaign_id UUID NOT NULL,
+          org_id UUID NOT NULL,
+          date_start DATE NOT NULL,
+          date_end DATE NOT NULL,
+          report JSONB NOT NULL,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          UNIQUE (campaign_id, date_start, date_end)
+        )
+      `);
+      await query(`
+        INSERT INTO campaign_ai_reports (campaign_id, org_id, date_start, date_end, report)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (campaign_id, date_start, date_end) DO UPDATE SET report = $5, updated_at = NOW()
+      `, [id, req.user!.orgId, start, end, JSON.stringify(report)]);
+    } catch (e) { /* non-fatal */ }
+
+    res.json({ success: true, data: { report, campaign: { id: row.id, name: row.name, status: row.status } } });
+  } catch (err) { next(err); }
+});
+
 // ─── Public Report (no auth) ──────────────────────────────────────────────────
-router.get('/public/:token', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/public/:token', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { token } = req.params;
     const { password } = req.query as Record<string, string>;
@@ -220,16 +323,16 @@ router.get('/public/:token', async (req: Request, res: Response, next: NextFunct
       `SELECT * FROM campaign_report_shares WHERE token = $1 AND is_active = TRUE`,
       [token]
     );
-    if (!share) return res.status(404).json({ error: 'Report not found' });
+    if (!share) { res.status(404).json({ error: 'Report not found' }); return; }
 
     if (share.expires_at && new Date(share.expires_at) < new Date()) {
-      return res.status(410).json({ error: 'Report link has expired' });
+      res.status(410).json({ error: 'Report link has expired' }); return;
     }
 
     if (share.password) {
-      if (!password) return res.status(401).json({ error: 'Password required', password_required: true });
+      if (!password) { res.status(401).json({ error: 'Password required', password_required: true }); return; }
       const valid = await bcrypt.compare(password, share.password);
-      if (!valid) return res.status(401).json({ error: 'Incorrect password' });
+      if (!valid) { res.status(401).json({ error: 'Incorrect password' }); return; }
     }
 
     await query(`UPDATE campaign_report_shares SET views = views + 1 WHERE token = $1`, [token]);

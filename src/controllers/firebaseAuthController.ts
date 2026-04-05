@@ -57,7 +57,10 @@ export async function firebaseAuth(req: Request, res: Response, next: NextFuncti
   try {
     const { idToken } = req.body;
     if (!idToken) return res.status(400).json({ error: 'idToken required' });
-    if (!FIREBASE_API_KEY) return res.status(500).json({ error: 'Firebase not configured' });
+    if (!FIREBASE_API_KEY) {
+      console.error('[FirebaseAuth] FIREBASE_API_KEY is not set in environment variables');
+      return res.status(500).json({ error: 'Authentication service not configured. Please contact support.' });
+    }
 
     const firebaseUser = await verifyFirebaseIdToken(idToken);
 
@@ -144,8 +147,10 @@ export async function firebaseAuth(req: Request, res: Response, next: NextFuncti
     }
   } catch (err: any) {
     if (err.isFirebaseError) {
-      return res.status(401).json({ error: 'Invalid or expired Firebase token' });
+      console.error('[FirebaseAuth] Token verification failed:', err.message);
+      return res.status(401).json({ error: 'Google sign-in failed. Please try again.' });
     }
+    console.error('[FirebaseAuth] Unexpected error:', err.message);
     return next(err);
   }
 }
